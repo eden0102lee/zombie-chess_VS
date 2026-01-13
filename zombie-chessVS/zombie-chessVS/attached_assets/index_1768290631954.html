@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>殭屍棋 Online - 連線對戰版</title>
+        <style>
+            :root {
+                --bg0: #0f172a;
+                --bg1: #111c33;
+                --p1: #ef4444;
+                --p2: #3b82f6;
+                --gold: #fbbf24;
+                --move: rgba(34, 197, 94, 0.55);
+                --attack: rgba(239, 68, 68, 0.55);
+                --sac: rgba(251, 191, 36, 0.55);
+                --stack-jump: rgba(168, 85, 247, 0.65);
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                font-family: "Microsoft JhengHei", system-ui, sans-serif;
+                color: #e5e7eb;
+                background: radial-gradient(circle at 50% 0%, #1e293b, #0f172a);
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 20px;
+                user-select: none;
+            }
+
+            /* 連線大廳遮罩 */
+            #lobby-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.95);
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+            .lobby-box {
+                background: #1e293b;
+                padding: 40px;
+                border-radius: 20px;
+                text-align: center;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            }
+            .lobby-input {
+                padding: 15px;
+                font-size: 18px;
+                border-radius: 10px;
+                border: none;
+                margin-bottom: 20px;
+                width: 250px;
+                text-align: center;
+            }
+            .lobby-btn {
+                padding: 15px 30px;
+                font-size: 18px;
+                border-radius: 10px;
+                border: none;
+                background: var(--gold);
+                color: #000;
+                font-weight: bold;
+                cursor: pointer;
+                transition: 0.2s;
+            }
+            .lobby-btn:hover {
+                transform: scale(1.05);
+            }
+
+            /* 遊戲介面 */
+            #game-container {
+                display: none;
+                width: 100%;
+                max-width: 1000px;
+                gap: 20px;
+            }
+            .wrap {
+                display: grid;
+                grid-template-columns: 1fr 340px;
+                gap: 20px;
+                width: 100%;
+            }
+            @media (max-width: 900px) {
+                .wrap {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            .card {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 16px;
+                padding: 15px;
+            }
+            .board-frame {
+                display: flex;
+                justify-content: center;
+                padding: 10px;
+            }
+            #game-board {
+                display: grid;
+                grid-template-columns: repeat(7, 68px);
+                grid-template-rows: repeat(7, 68px);
+                gap: 6px;
+                background: #0b1222;
+                padding: 12px;
+                border-radius: 14px;
+            }
+
+            .cell {
+                border-radius: 12px;
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+            }
+            .cell.underworld {
+                background: #f1f5f9;
+            }
+            .cell.afterlife {
+                background: #1f2b44;
+                border: 1px dashed rgba(255, 255, 255, 0.15);
+            }
+            .cell.afterlife::before {
+                content: "陽";
+                position: absolute;
+                top: 4px;
+                left: 6px;
+                font-size: 10px;
+                opacity: 0.3;
+            }
+
+            .cell.selected {
+                outline: 4px solid var(--gold);
+                z-index: 10;
+            }
+
+            /* 視覺指示器 */
+            .indicator {
+                position: absolute;
+                pointer-events: none;
+                z-index: 40;
+            }
+            .indicator-move {
+                width: 18px;
+                height: 18px;
+                background: rgba(34, 197, 94, 0.9);
+                border-radius: 50%;
+                box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+            }
+            .indicator-attack {
+                width: 100%;
+                height: 100%;
+                border: 4px solid rgba(239, 68, 68, 0.85);
+                border-radius: 12px;
+                box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+                animation: pulse-red 1.5s infinite;
+            }
+            .indicator-sacrifice {
+                width: 100%;
+                height: 100%;
+                border: 4px solid var(--sac);
+                border-radius: 12px;
+                background: rgba(251, 191, 36, 0.15);
+            }
+            .valid-revive-hint {
+                box-shadow: inset 0 0 0 3px rgba(34, 197, 94, 0.6);
+                background: rgba(34, 197, 94, 0.1);
+            }
+            .valid-jump-stack {
+                background: var(--stack-jump);
+            }
+            @keyframes pulse-red {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+                }
+                70% {
+                    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+                }
+                100% {
+                    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+                }
+            }
+
+            .piece-container {
+                width: 100%;
+                height: 100%;
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                pointer-events: none;
+            }
+            .piece {
+                border-radius: 50%;
+                border: 2px solid rgba(0, 0, 0, 0.3);
+                position: absolute;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 900;
+                color: #fff;
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            }
+            .piece.p1 {
+                background: radial-gradient(
+                    circle at 30% 30%,
+                    #fca5a5,
+                    var(--p1)
+                );
+                text-shadow: 0 1px 2px #991b1b;
+            }
+            .piece.p2 {
+                background: radial-gradient(
+                    circle at 30% 30%,
+                    #93c5fd,
+                    var(--p2)
+                );
+                text-shadow: 0 1px 2px #1e40af;
+            }
+            .size-S {
+                width: 34px;
+                height: 34px;
+                z-index: 30;
+                font-size: 12px;
+            }
+            .size-M {
+                width: 46px;
+                height: 46px;
+                z-index: 20;
+                font-size: 14px;
+            }
+            .size-L {
+                width: 58px;
+                height: 58px;
+                z-index: 10;
+                font-size: 16px;
+            }
+
+            .stack-dot {
+                width: 22px;
+                height: 22px;
+                background: var(--gold);
+                border: 2px solid #fff;
+                border-radius: 50%;
+                position: absolute;
+                z-index: 100;
+                animation: pulse 1s infinite;
+                box-shadow: 0 0 10px var(--gold);
+                cursor: pointer;
+                pointer-events: auto;
+            }
+            @keyframes pulse {
+                0% {
+                    transform: scale(0.9);
+                }
+                50% {
+                    transform: scale(1.2);
+                }
+                100% {
+                    transform: scale(0.9);
+                }
+            }
+
+            .btn {
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: #fff;
+                padding: 8px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: bold;
+                width: 100%;
+                margin-top: 5px;
+            }
+            .btn:hover {
+                background: rgba(255, 255, 255, 0.2);
+            }
+            .btn:disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+            }
+            .btn.active {
+                background: var(--gold);
+                color: #000;
+            }
+            .btn.combo {
+                background: #22c55e;
+                border-color: #22c55e;
+                display: none;
+            }
+
+            .status-bar {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 10px;
+                font-weight: bold;
+                font-size: 1.1em;
+            }
+            .supply-row {
+                display: flex;
+                gap: 5px;
+                margin-bottom: 8px;
+            }
+            .supply-btn {
+                flex: 1;
+                font-size: 12px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .log-area {
+                height: 150px;
+                overflow-y: auto;
+                background: rgba(0, 0, 0, 0.3);
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 13px;
+                color: #ccc;
+                margin-top: 15px;
+            }
+            .log-line {
+                margin-bottom: 4px;
+                border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+                padding-bottom: 2px;
+            }
+
+            .my-turn {
+                box-shadow: 0 0 15px var(--gold);
+                border-color: var(--gold);
+            }
+            .winner-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.85);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                z-index: 10000;
+            }
+            .winner-text {
+                font-size: 3em;
+                color: var(--gold);
+                margin-bottom: 20px;
+                text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+            }
+        </style>
+        <script src="/socket.io/socket.io.js"></script>
+    </head>
+    <body>
+        <div id="lobby-overlay">
+            <div class="lobby-box">
+                <h1 style="color: #fff; margin-bottom: 10px">
+                    🧟 殭屍棋 Online
+                </h1>
+                <p style="color: #ccc; margin-bottom: 30px">
+                    輸入房間號碼與朋友對戰
+                </p>
+                <input
+                    type="text"
+                    id="room-id"
+                    class="lobby-input"
+                    placeholder="例如: 8888"
+                    value="1234"
+                />
+                <br />
+                <button class="lobby-btn" onclick="joinGame()">加入房間</button>
+                <p
+                    id="conn-status"
+                    style="margin-top: 20px; color: #f87171; font-size: 14px"
+                ></p>
+            </div>
+        </div>
+
+        <div id="game-container">
+            <div class="wrap">
+                <div class="card" id="board-card">
+                    <div class="status-bar">
+                        <span style="color: var(--p1)"
+                            >P1: <span id="s1">0</span>/8</span
+                        >
+                        <span
+                            id="role-display"
+                            style="
+                                background: #334155;
+                                padding: 2px 8px;
+                                border-radius: 4px;
+                                font-size: 0.8em;
+                            "
+                            >等待對手...</span
+                        >
+                        <span style="color: var(--p2)"
+                            >P2: <span id="s2">0</span>/8</span
+                        >
+                    </div>
+                    <div
+                        style="
+                            text-align: center;
+                            margin-bottom: 10px;
+                            font-weight: bold;
+                        "
+                        id="turn-display"
+                    ></div>
+                    <div class="board-frame"><div id="game-board"></div></div>
+                </div>
+
+                <div class="card" style="display: flex; flex-direction: column">
+                    <h3 style="margin: 0 0 10px 0">復活供應區</h3>
+                    <div
+                        style="
+                            color: var(--p1);
+                            font-weight: bold;
+                            font-size: 12px;
+                        "
+                    >
+                        玩家 1 (紅)
+                    </div>
+                    <div class="supply-row">
+                        <button
+                            class="btn supply-btn"
+                            id="p1-L"
+                            onclick="selectSupply(1,'L')"
+                        >
+                            大<br /><span id="c1-L">0</span>
+                        </button>
+                        <button
+                            class="btn supply-btn"
+                            id="p1-M"
+                            onclick="selectSupply(1,'M')"
+                        >
+                            中<br /><span id="c1-M">0</span>
+                        </button>
+                        <button
+                            class="btn supply-btn"
+                            id="p1-S"
+                            onclick="selectSupply(1,'S')"
+                        >
+                            小<br /><span id="c1-S">0</span>
+                        </button>
+                    </div>
+                    <div
+                        style="
+                            color: var(--p2);
+                            font-weight: bold;
+                            font-size: 12px;
+                            margin-top: 5px;
+                        "
+                    >
+                        玩家 2 (藍)
+                    </div>
+                    <div class="supply-row">
+                        <button
+                            class="btn supply-btn"
+                            id="p2-L"
+                            onclick="selectSupply(2,'L')"
+                        >
+                            大<br /><span id="c2-L">0</span>
+                        </button>
+                        <button
+                            class="btn supply-btn"
+                            id="p2-M"
+                            onclick="selectSupply(2,'M')"
+                        >
+                            中<br /><span id="c2-M">0</span>
+                        </button>
+                        <button
+                            class="btn supply-btn"
+                            id="p2-S"
+                            onclick="selectSupply(2,'S')"
+                        >
+                            小<br /><span id="c2-S">0</span>
+                        </button>
+                    </div>
+                    <hr
+                        style="
+                            width: 100%;
+                            border: 0;
+                            border-top: 1px solid rgba(255, 255, 255, 0.1);
+                            margin: 15px 0;
+                        "
+                    />
+                    <div style="margin-top: auto">
+                        <button
+                            class="btn combo"
+                            id="btn-end-combo"
+                            onclick="endTurn()"
+                        >
+                            結束連跳
+                        </button>
+                        <button
+                            class="btn"
+                            style="background: #475569"
+                            onclick="resetSelection()"
+                        >
+                            取消選取
+                        </button>
+                    </div>
+                    <div class="log-area" id="log"></div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // --- 網路連線設定 ---
+            const socket = io();
+            let myPlayerNum = 0;
+            let currentRoomId = "";
+            let isGameOver = false; // 新增遊戲結束狀態
+
+            function joinGame() {
+                const room = document.getElementById("room-id").value;
+                if (!room) return alert("請輸入房間號碼");
+                socket.emit("joinRoom", room);
+                document.getElementById("conn-status").innerText = "連線中...";
+            }
+
+            socket.on("playerAssigned", ({ playerNum, roomId }) => {
+                myPlayerNum = playerNum;
+                currentRoomId = roomId;
+                document.getElementById("lobby-overlay").style.display = "none";
+                document.getElementById("game-container").style.display =
+                    "flex";
+                document.getElementById("game-container").style.justifyContent =
+                    "center";
+                document.getElementById("role-display").innerText =
+                    `你是: 玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
+                log(`加入房間 ${roomId}，你是 P${playerNum}`);
+                if (playerNum === 1) {
+                    initGameData();
+                    syncServer();
+                }
+            });
+
+            socket.on("gameStart", () => {
+                log("對手已加入，遊戲開始！");
+            });
+            socket.on("errorMsg", (msg) => {
+                alert(msg);
+                document.getElementById("conn-status").innerText = msg;
+            });
+            socket.on("playerDisconnected", () => {
+                alert("對手已斷線！");
+                location.reload();
+            });
+
+            socket.on("stateUpdated", (data) => {
+                board = data.board;
+                scores = data.scores;
+                supply = data.supply;
+                currentPlayer = data.turn;
+
+                // 如果從伺服器收到狀態，且回合改變了，強制取消連跳與選取
+                if (isComboMode && currentPlayer !== myPlayerNum) {
+                    isComboMode = false;
+                    resetSelection();
+                }
+
+                render();
+                checkWin(); // 每次狀態更新都檢查是否有人獲勝
+            });
+
+            // --- 遊戲邏輯 ---
+            const SIZE = 7;
+            const PIECE_VALS = { L: 3, M: 2, S: 1 };
+            const MAX_PIECES = { L: 1, M: 4, S: 5 };
+
+            let board = [];
+            let scores = { 1: 0, 2: 0 };
+            let supply = { 1: {}, 2: {} };
+            let currentPlayer = 1;
+            let selectedCell = null;
+            let reviveSelection = null;
+            let validMoves = [];
+            let isComboMode = false;
+
+            function initGameData() {
+                scores = { 1: 0, 2: 0 };
+                currentPlayer = 1;
+                isGameOver = false; // 重置
+                board = Array.from({ length: SIZE }, () =>
+                    Array.from({ length: SIZE }, () => []),
+                );
+                const layout = [
+                    { r: 1, row: [2, 0, 3, 0, 2], p: 2 },
+                    { r: 2, row: [1, 1, 1, 1, 1], p: 2 },
+                    { r: 4, row: [1, 1, 1, 1, 1], p: 1 },
+                    { r: 5, row: [2, 0, 3, 0, 2], p: 1 },
+                ];
+                let used = { 1: { L: 0, M: 0, S: 0 }, 2: { L: 0, M: 0, S: 0 } };
+                layout.forEach((cfg) => {
+                    cfg.row.forEach((val, cIdx) => {
+                        if (val > 0) {
+                            let type = val === 3 ? "L" : val === 2 ? "M" : "S";
+                            board[cfg.r][cIdx + 1].push({
+                                type,
+                                val,
+                                player: cfg.p,
+                            });
+                            used[cfg.p][type]++;
+                        }
+                    });
+                });
+                [1, 2].forEach((p) => {
+                    for (let k in MAX_PIECES)
+                        supply[p][k] = MAX_PIECES[k] - used[p][k];
+                });
+                render();
+            }
+
+            function syncServer() {
+                socket.emit("updateGame", {
+                    roomId: currentRoomId,
+                    newState: { board, scores, supply, turn: currentPlayer },
+                });
+            }
+
+            function checkWin() {
+                if (isGameOver) return;
+
+                let winner = null;
+                if (scores[1] >= 8) winner = 1;
+                else if (scores[2] >= 8) winner = 2;
+
+                if (winner) {
+                    isGameOver = true;
+                    // 延遲一點點讓畫面先渲染出最後一分
+                    setTimeout(() => {
+                        const msg = `🏆 玩家 ${winner} (${winner == 1 ? "紅" : "藍"}) 獲勝！`;
+                        const div = document.createElement("div");
+                        div.className = "winner-overlay";
+                        div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
+                        document.body.appendChild(div);
+                    }, 100);
+                }
+            }
+
+            function isAfterlife(r, c) {
+                return r === 0 || r === 6 || c === 0 || c === 6;
+            }
+            function getStackVal(stack) {
+                return stack.reduce((a, b) => a + b.val, 0);
+            }
+            function getStackLabel(stack) {
+                return stack.map((p) => p.type).join("");
+            }
+            function log(msg) {
+                const el = document.getElementById("log");
+                el.innerHTML += `<div class="log-line">${msg}</div>`;
+                el.scrollTop = el.scrollHeight;
+            }
+
+            function handleCell(r, c) {
+                // 遊戲結束鎖定
+                if (isGameOver) return;
+                // 檢查是否輪到自己
+                if (currentPlayer !== myPlayerNum) return;
+
+                // 1. 連跳模式
+                if (isComboMode) {
+                    let m = validMoves.find((x) => x.r === r && x.c === c);
+                    if (m) execute(m);
+                    else if (r === selectedCell.r && c === selectedCell.c) {
+                    } else alert("連跳中：請選擇目標或結束連跳");
+                    return;
+                }
+                // 2. 復活
+                if (reviveSelection) {
+                    if (!isAfterlife(r, c) && board[r][c].length === 0) {
+                        let t = reviveSelection;
+                        if (supply[currentPlayer][t] > 0) {
+                            supply[currentPlayer][t]--;
+                            board[r][c].push({
+                                type: t,
+                                val: PIECE_VALS[t],
+                                player: currentPlayer,
+                            });
+                            resetSelection();
+                            syncServer();
+                        }
+                    } else resetSelection();
+                    return;
+                }
+                // 3. 選棋
+                let stack = board[r][c];
+                if (stack.length > 0 && stack[0].player === currentPlayer) {
+                    if (
+                        selectedCell &&
+                        selectedCell.r === r &&
+                        selectedCell.c === c
+                    )
+                        resetSelection();
+                    else {
+                        selectedCell = { r, c };
+                        validMoves = calcMoves(r, c);
+                        render();
+                    }
+                    return;
+                }
+                // 4. 移動
+                if (selectedCell) {
+                    let m = validMoves.find(
+                        (x) =>
+                            x.r === r &&
+                            x.c === c &&
+                            !["stack", "jump-stack"].includes(x.type),
+                    );
+                    if (m) execute(m);
+                    else resetSelection();
+                }
+            }
+
+            function calcMoves(r, c) {
+                let moves = [];
+                let stack = board[r][c];
+                if (stack.length === 0) return [];
+                let myVal = getStackVal(stack);
+                let myBottomVal = stack[0].val;
+                const dirs = [
+                    [-1, 0],
+                    [1, 0],
+                    [0, -1],
+                    [0, 1],
+                ];
+
+                dirs.forEach(([dr, dc]) => {
+                    if (!isComboMode) {
+                        let nr = r + dr,
+                            nc = c + dc;
+                        if (
+                            nr >= 0 &&
+                            nr < SIZE &&
+                            nc >= 0 &&
+                            nc < SIZE &&
+                            !isAfterlife(nr, nc)
+                        ) {
+                            let target = board[nr][nc];
+                            if (target.length === 0)
+                                moves.push({ r: nr, c: nc, type: "move" });
+                            else if (
+                                target[0].player === currentPlayer &&
+                                myBottomVal < target[target.length - 1].val
+                            ) {
+                                moves.push({ r: nr, c: nc, type: "stack" });
+                            }
+                        }
+                    }
+                    let jr = r + dr,
+                        jc = c + dc;
+                    let enemySum = 0;
+                    let victims = [];
+                    while (jr >= 0 && jr < SIZE && jc >= 0 && jc < SIZE) {
+                        let tStack = board[jr][jc];
+                        if (tStack.length === 0) {
+                            if (
+                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
+                                myVal >= enemySum
+                            ) {
+                                let isSacrifice = isAfterlife(jr, jc);
+                                moves.push({
+                                    r: jr,
+                                    c: jc,
+                                    type: isSacrifice ? "sacrifice" : "jump",
+                                    score: enemySum,
+                                    victims: [...victims],
+                                });
+                            }
+                            break;
+                        }
+                        if (tStack[0].player !== currentPlayer) {
+                            enemySum += getStackVal(tStack);
+                            victims.push({ r: jr, c: jc });
+                        } else {
+                            if (
+                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
+                                myVal >= enemySum &&
+                                myBottomVal < tStack[tStack.length - 1].val
+                            ) {
+                                moves.push({
+                                    r: jr,
+                                    c: jc,
+                                    type: "jump-stack",
+                                    score: enemySum,
+                                    victims: [...victims],
+                                });
+                            }
+                        }
+                        jr += dr;
+                        jc += dc;
+                    }
+                });
+                return moves;
+            }
+
+            function execute(m) {
+                let sr = selectedCell.r,
+                    sc = selectedCell.c;
+                let mover = board[sr][sc];
+
+                if (["jump", "sacrifice", "jump-stack"].includes(m.type)) {
+                    m.victims.forEach((v) => {
+                        board[v.r][v.c].forEach(
+                            (p) => supply[p.player][p.type]++,
+                        );
+                        board[v.r][v.c] = [];
+                    });
+                    scores[currentPlayer] += m.score;
+                }
+                board[sr][sc] = [];
+
+                if (m.type === "sacrifice") {
+                    mover.forEach((p) => supply[p.player][p.type]++);
+                    endTurn();
+                    return;
+                }
+                if (m.type === "jump-stack") {
+                    board[m.r][m.c].push(...mover);
+                    endTurn();
+                    return;
+                }
+
+                if (m.type === "stack") board[m.r][m.c].push(...mover);
+                else board[m.r][m.c] = mover;
+
+                if (m.type === "jump") {
+                    let nextMoves = calcMoves(m.r, m.c).filter((nm) =>
+                        ["jump", "sacrifice", "jump-stack"].includes(nm.type),
+                    );
+                    if (nextMoves.length > 0) {
+                        isComboMode = true;
+                        selectedCell = { r: m.r, c: m.c };
+                        validMoves = nextMoves;
+                        render();
+                        return;
+                    }
+                }
+                endTurn();
+            }
+
+            function selectSupply(p, type) {
+                if (isGameOver) return; // 鎖定
+                if (p !== currentPlayer || p !== myPlayerNum || isComboMode)
+                    return;
+                if (supply[p][type] <= 0) return;
+                reviveSelection = type;
+                selectedCell = null;
+                validMoves = [];
+                render();
+            }
+
+            function endTurn() {
+                if (currentPlayer !== myPlayerNum) return;
+                isComboMode = false;
+                resetSelection();
+                syncServer();
+            }
+
+            function resetSelection() {
+                selectedCell = null;
+                reviveSelection = null;
+                validMoves = [];
+                render();
+            }
+
+            function render() {
+                const elBoard = document.getElementById("game-board");
+                elBoard.innerHTML = "";
+
+                document.getElementById("s1").innerText = scores[1];
+                document.getElementById("s2").innerText = scores[2];
+                let turnTxt = document.getElementById("turn-display");
+                turnTxt.innerText = `輪到: 玩家 ${currentPlayer} (${currentPlayer == 1 ? "紅" : "藍"})`;
+                turnTxt.style.color =
+                    currentPlayer == 1 ? "var(--p1)" : "var(--p2)";
+
+                const boardCard = document.getElementById("board-card");
+                if (currentPlayer === myPlayerNum && !isGameOver)
+                    boardCard.classList.add("my-turn");
+                else boardCard.classList.remove("my-turn");
+
+                document.getElementById("btn-end-combo").style.display =
+                    isComboMode ? "block" : "none";
+
+                ["L", "M", "S"].forEach((t) => {
+                    document.getElementById(`c1-${t}`).innerText = supply[1][t];
+                    document.getElementById(`c2-${t}`).innerText = supply[2][t];
+
+                    let btn1 = document.getElementById(`p1-${t}`);
+                    let btn2 = document.getElementById(`p2-${t}`);
+                    let canP1 =
+                        currentPlayer === 1 &&
+                        myPlayerNum === 1 &&
+                        supply[1][t] > 0 &&
+                        !isComboMode &&
+                        !isGameOver;
+                    let canP2 =
+                        currentPlayer === 2 &&
+                        myPlayerNum === 2 &&
+                        supply[2][t] > 0 &&
+                        !isComboMode &&
+                        !isGameOver;
+
+                    btn1.disabled = !canP1;
+                    btn2.disabled = !canP2;
+                    btn1.className = `btn supply-btn ${reviveSelection === t && canP1 ? "active" : ""}`;
+                    btn2.className = `btn supply-btn ${reviveSelection === t && canP2 ? "active" : ""}`;
+                });
+
+                for (let r = 0; r < SIZE; r++) {
+                    for (let c = 0; c < SIZE; c++) {
+                        let div = document.createElement("div");
+                        div.className = `cell ${isAfterlife(r, c) ? "afterlife" : "underworld"}`;
+                        div.onclick = () => handleCell(r, c);
+
+                        let stack = board[r][c];
+
+                        if (
+                            reviveSelection &&
+                            !isAfterlife(r, c) &&
+                            stack.length === 0
+                        ) {
+                            div.classList.add("valid-revive-hint");
+                        }
+
+                        if (stack.length > 0) {
+                            let container = document.createElement("div");
+                            container.className = "piece-container";
+                            let label = getStackLabel(stack);
+                            stack.forEach((p, idx) => {
+                                let pDiv = document.createElement("div");
+                                pDiv.className = `piece p${p.player} size-${p.type}`;
+                                if (idx === stack.length - 1)
+                                    pDiv.innerText = label;
+                                container.appendChild(pDiv);
+                            });
+                            div.appendChild(container);
+                        }
+                        if (
+                            selectedCell &&
+                            selectedCell.r === r &&
+                            selectedCell.c === c
+                        )
+                            div.classList.add("selected");
+
+                        let move = validMoves.find(
+                            (m) => m.r === r && m.c === c,
+                        );
+                        if (move) {
+                            if (move.type.includes("stack")) {
+                                let dot = document.createElement("div");
+                                dot.className = "stack-dot";
+                                if (move.type === "jump-stack") {
+                                    dot.style.background = "#a855f7";
+                                    dot.style.borderColor = "#fff";
+                                    div.classList.add("valid-jump-stack");
+                                }
+                                dot.onclick = (e) => {
+                                    e.stopPropagation();
+                                    execute(move);
+                                };
+                                div.appendChild(dot);
+                            } else {
+                                if (move.type === "move") {
+                                    let ind = document.createElement("div");
+                                    ind.className = "indicator indicator-move";
+                                    div.appendChild(ind);
+                                } else if (move.type === "jump") {
+                                    let ind = document.createElement("div");
+                                    ind.className =
+                                        "indicator indicator-attack";
+                                    div.appendChild(ind);
+                                } else if (move.type === "sacrifice") {
+                                    let ind = document.createElement("div");
+                                    ind.className =
+                                        "indicator indicator-sacrifice";
+                                    div.appendChild(ind);
+                                }
+                            }
+                        }
+                        elBoard.appendChild(div);
+                    }
+                }
+            }
+        </script>
+    </body>
+</html>

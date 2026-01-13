@@ -1,0 +1,14 @@
+{
+  "name": "zombie-chess-online",
+  "version": "1.0.0",
+  "description": "Real-time Zombie Chess",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "socket.io": "^4.8.3"
+  }
+}
