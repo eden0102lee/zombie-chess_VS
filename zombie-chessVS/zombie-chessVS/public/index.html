@@ -74,6 +74,77 @@
             .lobby-btn:hover {
                 transform: scale(1.05);
             }
+            .room-list {
+                margin-top: 25px;
+                text-align: left;
+                max-height: 260px;
+                overflow-y: auto;
+                padding: 0 5px;
+            }
+            .room-list h2 {
+                margin: 0 0 10px;
+                font-size: 16px;
+                color: #e2e8f0;
+            }
+            .room-list ul {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .room-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: rgba(15, 23, 42, 0.6);
+                border: 1px solid rgba(148, 163, 184, 0.3);
+                border-radius: 12px;
+                padding: 10px 12px;
+            }
+            .room-meta {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                font-size: 14px;
+            }
+            .room-meta span {
+                color: #cbd5f5;
+            }
+            .room-meta small {
+                color: #94a3b8;
+            }
+            .room-join {
+                padding: 8px 14px;
+                font-size: 14px;
+                border-radius: 8px;
+                border: none;
+                background: #38bdf8;
+                color: #0f172a;
+                font-weight: 700;
+                cursor: pointer;
+            }
+            .room-join:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .room-empty {
+                font-size: 14px;
+                color: #94a3b8;
+                text-align: center;
+                padding: 12px 0;
+            }
+            .room-refresh {
+                margin-top: 8px;
+                font-size: 12px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                border: 1px solid rgba(148, 163, 184, 0.5);
+                background: transparent;
+                color: #e2e8f0;
+                cursor: pointer;
+            }
 
             /* 遊戲介面 */
             #game-container {
@@ -406,6 +477,14 @@
                     id="conn-status"
                     style="margin-top: 20px; color: #f87171; font-size: 14px"
                 ></p>
+                <div class="room-list">
+                    <h2>可加入房間</h2>
+                    <ul id="room-list"></ul>
+                    <div id="room-empty" class="room-empty"></div>
+                    <button class="room-refresh" onclick="requestRoomList()">
+                        重新整理列表
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -621,6 +700,51 @@
                 document.getElementById("conn-status").innerText = "連線中...";
             }
 
+            function requestRoomList() {
+                socket.emit("getRooms");
+            }
+
+            function renderRoomList(rooms) {
+                const list = document.getElementById("room-list");
+                const empty = document.getElementById("room-empty");
+                list.innerHTML = "";
+
+                if (!rooms.length) {
+                    empty.innerText = "目前沒有可加入的房間";
+                    return;
+                }
+
+                empty.innerText = "";
+
+                rooms.forEach((room) => {
+                    const li = document.createElement("li");
+                    li.className = "room-item";
+
+                    const meta = document.createElement("div");
+                    meta.className = "room-meta";
+                    meta.innerHTML = `<span>房間 ${room.roomId}</span><small>玩家 ${room.players}/2</small>`;
+
+                    const btn = document.createElement("button");
+                    btn.className = "room-join";
+                    btn.innerText = room.canJoin ? "加入" : "已滿";
+                    btn.disabled = !room.canJoin;
+                    btn.onclick = () => {
+                        document.getElementById("room-id").value =
+                            room.roomId;
+                        joinGame();
+                    };
+
+                    li.appendChild(meta);
+                    li.appendChild(btn);
+                    list.appendChild(li);
+                });
+            }
+
+            socket.on("roomsUpdated", (rooms) => {
+                const joinableRooms = rooms.filter((room) => room.canJoin);
+                renderRoomList(joinableRooms);
+            });
+
             socket.on("playerAssigned", ({ playerNum, roomId }) => {
                 myPlayerNum = playerNum;
                 currentRoomId = roomId;
@@ -649,6 +773,8 @@
                 alert("對手已斷線！");
                 location.reload();
             });
+
+            requestRoomList();
 
             socket.on("stateUpdated", (data) => {
                 board = data.board;

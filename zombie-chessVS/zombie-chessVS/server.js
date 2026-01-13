@@ -28,8 +28,25 @@ app.get("/health", (req, res) => {
 // 遊戲房間狀態
 const rooms = {};
 
+const buildRoomList = () =>
+    Object.entries(rooms).map(([roomId, room]) => ({
+        roomId,
+        players: room.players.length,
+        canJoin: room.players.length < 2,
+    }));
+
+const emitRoomList = () => {
+    io.emit("roomsUpdated", buildRoomList());
+};
+
 io.on("connection", (socket) => {
     console.log("一位使用者連線:", socket.id);
+
+    socket.emit("roomsUpdated", buildRoomList());
+
+    socket.on("getRooms", () => {
+        socket.emit("roomsUpdated", buildRoomList());
+    });
 
     // 1. 玩家加入房間
     socket.on("joinRoom", (roomId) => {
@@ -84,6 +101,8 @@ io.on("connection", (socket) => {
             });
         }
 
+        emitRoomList();
+
         if (room.players.length === 2) {
             io.to(roomId).emit("gameStart", { msg: "遊戲開始！" });
         }
@@ -120,6 +139,7 @@ io.on("connection", (socket) => {
             if (playerIndex !== -1) {
                 io.to(roomId).emit("playerDisconnected");
                 delete rooms[roomId];
+                emitRoomList();
                 break;
             }
         }
