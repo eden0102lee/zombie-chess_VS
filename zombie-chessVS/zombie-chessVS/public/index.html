@@ -100,6 +100,32 @@
                 border-radius: 16px;
                 padding: 15px;
             }
+            .side-column {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+            .rules-content {
+                font-size: 13px;
+                line-height: 1.65;
+                color: #cbd5f5;
+                max-height: 520px;
+                overflow-y: auto;
+                padding-right: 6px;
+            }
+            .rules-content h4 {
+                margin: 12px 0 6px;
+                font-size: 14px;
+                color: #e2e8f0;
+            }
+            .rules-content ul,
+            .rules-content ol {
+                padding-left: 18px;
+                margin: 6px 0 10px;
+            }
+            .rules-content li {
+                margin-bottom: 6px;
+            }
             .board-frame {
                 display: flex;
                 justify-content: center;
@@ -415,98 +441,161 @@
                     <div class="board-frame"><div id="game-board"></div></div>
                 </div>
 
-                <div class="card" style="display: flex; flex-direction: column">
-                    <h3 style="margin: 0 0 10px 0">復活供應區</h3>
-                    <div
-                        style="
-                            color: var(--p1);
-                            font-weight: bold;
-                            font-size: 12px;
-                        "
-                    >
-                        玩家 1 (紅)
+                <div class="side-column">
+                    <div class="card" style="display: flex; flex-direction: column">
+                        <h3 style="margin: 0 0 10px 0">復活供應區</h3>
+                        <div
+                            style="
+                                color: var(--p1);
+                                font-weight: bold;
+                                font-size: 12px;
+                            "
+                        >
+                            玩家 1 (紅)
+                        </div>
+                        <div class="supply-row">
+                            <button
+                                class="btn supply-btn"
+                                id="p1-L"
+                                onclick="selectSupply(1,'L')"
+                            >
+                                大<br /><span id="c1-L">0</span>
+                            </button>
+                            <button
+                                class="btn supply-btn"
+                                id="p1-M"
+                                onclick="selectSupply(1,'M')"
+                            >
+                                中<br /><span id="c1-M">0</span>
+                            </button>
+                            <button
+                                class="btn supply-btn"
+                                id="p1-S"
+                                onclick="selectSupply(1,'S')"
+                            >
+                                小<br /><span id="c1-S">0</span>
+                            </button>
+                        </div>
+                        <div
+                            style="
+                                color: var(--p2);
+                                font-weight: bold;
+                                font-size: 12px;
+                                margin-top: 5px;
+                            "
+                        >
+                            玩家 2 (藍)
+                        </div>
+                        <div class="supply-row">
+                            <button
+                                class="btn supply-btn"
+                                id="p2-L"
+                                onclick="selectSupply(2,'L')"
+                            >
+                                大<br /><span id="c2-L">0</span>
+                            </button>
+                            <button
+                                class="btn supply-btn"
+                                id="p2-M"
+                                onclick="selectSupply(2,'M')"
+                            >
+                                中<br /><span id="c2-M">0</span>
+                            </button>
+                            <button
+                                class="btn supply-btn"
+                                id="p2-S"
+                                onclick="selectSupply(2,'S')"
+                            >
+                                小<br /><span id="c2-S">0</span>
+                            </button>
+                        </div>
+                        <hr
+                            style="
+                                width: 100%;
+                                border: 0;
+                                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                                margin: 15px 0;
+                            "
+                        />
+                        <div style="margin-top: auto">
+                            <button
+                                class="btn combo"
+                                id="btn-end-combo"
+                                onclick="endTurn()"
+                            >
+                                結束連跳
+                            </button>
+                            <button
+                                class="btn"
+                                style="background: #475569"
+                                onclick="resetSelection()"
+                            >
+                                取消選取
+                            </button>
+                        </div>
+                        <div class="log-area" id="log"></div>
                     </div>
-                    <div class="supply-row">
-                        <button
-                            class="btn supply-btn"
-                            id="p1-L"
-                            onclick="selectSupply(1,'L')"
-                        >
-                            大<br /><span id="c1-L">0</span>
-                        </button>
-                        <button
-                            class="btn supply-btn"
-                            id="p1-M"
-                            onclick="selectSupply(1,'M')"
-                        >
-                            中<br /><span id="c1-M">0</span>
-                        </button>
-                        <button
-                            class="btn supply-btn"
-                            id="p1-S"
-                            onclick="selectSupply(1,'S')"
-                        >
-                            小<br /><span id="c1-S">0</span>
-                        </button>
+
+                    <div class="card">
+                        <h3 style="margin: 0 0 10px 0">遊戲聲明與規則</h3>
+                        <div class="rules-content">
+                            <h4>遊戲聲明</h4>
+                            <p>
+                                本遊戲為個人興趣練習作品，非原創遊戲。原始遊戲規則與設計概念由
+                                瑪吉卡工作室 製作。本作品僅作為學習、研究與技術練習用途，未用於任何商業行為。
+                            </p>
+
+                            <h4>回合行動規則</h4>
+                            <p>玩家在自己的回合中，必須選擇並執行以下三種行動之一：</p>
+                            <ol>
+                                <li>
+                                    <strong>復活：</strong>
+                                    玩家可以將陰間中任意一枚屬於自己的殭屍棋，放置到棋盤上任意一個空格位置。
+                                </li>
+                                <li>
+                                    <strong>移動：</strong>
+                                    玩家可以選擇同一格內的所有殭屍棋，沿直線方向移動至相鄰的一個空格。若移動目標格的最上方，存在我方階級更高的殭屍棋，則可以進行「上疊」。上疊後，殭屍棋的階級數值將相加，形成更高階的殭屍棋。
+                                </li>
+                                <li>
+                                    <strong>跳躍：</strong>
+                                    玩家可以選擇同一格內的自己所有殭屍棋進行跳躍，並藉此獲得分數。
+                                </li>
+                            </ol>
+
+                            <h4>跳躍規則</h4>
+                            <p>
+                                玩家選擇一格內的自己所有殭屍棋，沿直線方向跳過連續排列的殭屍棋。被跳過的殭屍棋，可以是我方或對手的殭屍棋。
+                            </p>
+
+                            <h4>得分規則</h4>
+                            <p>
+                                每當跳躍越過一枚敵方殭屍棋時，該殭屍棋會被送至陰間。玩家可獲得所有被送至陰間的敵方殭屍棋階級數值總和作為本次跳躍的得分。
+                            </p>
+
+                            <h4>跳躍限制與延續條件</h4>
+                            <ul>
+                                <li>
+                                    所選殭屍棋的階級總和，必須大於或等於所有被越過殭屍棋的階級總和。
+                                </li>
+                                <li>
+                                    跳躍後若落在空格上，玩家可以選擇讓該組殭屍棋繼續進行跳躍行動，直到玩家主動結束，或無法再進行跳躍。
+                                </li>
+                                <li>
+                                    玩家也可以選擇跳到我方階級更高的殭屍棋上進行「上疊」，或跳出棋盤直接進入陰間。只要選擇「上疊」或「跳出棋盤」，該次跳躍行動立即結束，不可再繼續跳躍。
+                                </li>
+                            </ul>
+
+                            <h4>陰間與回歸</h4>
+                            <p>
+                                跳出棋盤的殭屍棋，會暫時留在陰間。必須透過「復活行動」，才能重新回到棋盤（陽間）。
+                            </p>
+
+                            <h4>勝利條件</h4>
+                            <p>
+                                當任一玩家的分數軌到達 8 分時，遊戲立即結束。該玩家獲得勝利。
+                            </p>
+                        </div>
                     </div>
-                    <div
-                        style="
-                            color: var(--p2);
-                            font-weight: bold;
-                            font-size: 12px;
-                            margin-top: 5px;
-                        "
-                    >
-                        玩家 2 (藍)
-                    </div>
-                    <div class="supply-row">
-                        <button
-                            class="btn supply-btn"
-                            id="p2-L"
-                            onclick="selectSupply(2,'L')"
-                        >
-                            大<br /><span id="c2-L">0</span>
-                        </button>
-                        <button
-                            class="btn supply-btn"
-                            id="p2-M"
-                            onclick="selectSupply(2,'M')"
-                        >
-                            中<br /><span id="c2-M">0</span>
-                        </button>
-                        <button
-                            class="btn supply-btn"
-                            id="p2-S"
-                            onclick="selectSupply(2,'S')"
-                        >
-                            小<br /><span id="c2-S">0</span>
-                        </button>
-                    </div>
-                    <hr
-                        style="
-                            width: 100%;
-                            border: 0;
-                            border-top: 1px solid rgba(255, 255, 255, 0.1);
-                            margin: 15px 0;
-                        "
-                    />
-                    <div style="margin-top: auto">
-                        <button
-                            class="btn combo"
-                            id="btn-end-combo"
-                            onclick="endTurn()"
-                        >
-                            結束連跳
-                        </button>
-                        <button
-                            class="btn"
-                            style="background: #475569"
-                            onclick="resetSelection()"
-                        >
-                            取消選取
-                        </button>
-                    </div>
-                    <div class="log-area" id="log"></div>
                 </div>
             </div>
         </div>
