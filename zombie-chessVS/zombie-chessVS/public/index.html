@@ -792,6 +792,9 @@
             socket.on("gameStart", () => {
                 log("對手已加入，遊戲開始！");
             });
+            socket.on("playerAction", ({ message }) => {
+                log(message);
+            });
             socket.on("errorMsg", (msg) => {
                 alert(msg);
                 document.getElementById("conn-status").innerText = msg;
@@ -906,6 +909,19 @@
                 el.innerHTML += `<div class="log-line">${msg}</div>`;
                 el.scrollTop = el.scrollHeight;
             }
+            function emitAction(message) {
+                if (!currentRoomId) return;
+                socket.emit("playerAction", {
+                    roomId: currentRoomId,
+                    message,
+                });
+            }
+            function formatCell(r, c) {
+                return `(${r + 1}, ${c + 1})`;
+            }
+            function formatPlayerLabel(playerNum) {
+                return `玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
+            }
 
             function handleCell(r, c) {
                 if (isGameOver) return;
@@ -929,6 +945,9 @@
                                 val: PIECE_VALS[t],
                                 player: currentPlayer,
                             });
+                            emitAction(
+                                `${formatPlayerLabel(currentPlayer)} 復活 ${t} 到 ${formatCell(r, c)}`,
+                            );
                             resetSelection();
                             syncServer(); // 復活後自動結束回合 (這裡還是自動，因為復活不是連跳)
                             endTurn();
@@ -1067,6 +1086,12 @@
                 let sr = selectedCell.r,
                     sc = selectedCell.c;
                 let mover = board[sr][sc];
+                let moverLabel = getStackLabel(mover);
+                let playerLabel = formatPlayerLabel(currentPlayer);
+                let actionBase = `${playerLabel} ${moverLabel} 從 ${formatCell(
+                    sr,
+                    sc,
+                )} `;
 
                 // 吃子
                 if (["jump", "sacrifice", "jump-stack"].includes(m.type)) {
@@ -1083,21 +1108,50 @@
                 // 捨身與上疊：強制結束，但改為等待玩家手動按按鈕
                 if (m.type === "sacrifice") {
                     mover.forEach((p) => supply[p.player][p.type]++);
+                    emitAction(
+                        `${actionBase}捨身跳躍到 ${formatCell(
+                            m.r,
+                            m.c,
+                        )}（得分 ${m.score}）`,
+                    );
                     enterComboWaitState();
                     return;
                 }
                 if (m.type === "jump-stack") {
                     board[m.r][m.c].push(...mover);
+                    emitAction(
+                        `${actionBase}跳躍疊到 ${formatCell(
+                            m.r,
+                            m.c,
+                        )}（得分 ${m.score}）`,
+                    );
                     enterComboWaitState();
                     return;
                 }
 
                 // 移動/堆疊 (非跳躍)：直接結束
-                if (m.type === "stack") board[m.r][m.c].push(...mover);
-                else board[m.r][m.c] = mover;
+                if (m.type === "stack") {
+                    board[m.r][m.c].push(...mover);
+                    emitAction(
+                        `${actionBase}疊到 ${formatCell(m.r, m.c)}`,
+                    );
+                } else if (m.type === "move") {
+                    board[m.r][m.c] = mover;
+                    emitAction(
+                        `${actionBase}移動到 ${formatCell(m.r, m.c)}`,
+                    );
+                } else {
+                    board[m.r][m.c] = mover;
+                }
 
                 // 連跳檢查
                 if (m.type === "jump") {
+                    emitAction(
+                        `${actionBase}跳躍到 ${formatCell(
+                            m.r,
+                            m.c,
+                        )}（得分 ${m.score}）`,
+                    );
                     let nextMoves = calcMoves(m.r, m.c).filter((nm) =>
                         ["jump", "sacrifice", "jump-stack"].includes(nm.type),
                     );
@@ -1141,6 +1195,7 @@
 
             function endTurn() {
                 if (currentPlayer !== myPlayerNum) return;
+                emitAction(`${formatPlayerLabel(currentPlayer)} 結束回合`);
                 currentPlayer = currentPlayer === 1 ? 2 : 1;
                 isComboMode = false;
                 resetSelection();
