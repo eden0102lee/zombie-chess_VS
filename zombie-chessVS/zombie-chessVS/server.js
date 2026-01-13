@@ -128,6 +128,11 @@ io.on("connection", (socket) => {
         });
     });
 
+    socket.on("playerAction", ({ roomId, message }) => {
+        if (!rooms[roomId]) return;
+        io.to(roomId).emit("playerAction", { message });
+    });
+
     // 3. 斷線處理
     socket.on("disconnect", () => {
         console.log("使用者斷線:", socket.id);
