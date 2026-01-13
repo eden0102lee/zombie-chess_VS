@@ -152,6 +152,9 @@
                 width: 100%;
                 max-width: 1000px;
                 gap: 20px;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
             }
             .wrap {
                 display: grid;
@@ -789,7 +792,7 @@
                 document.getElementById("game-container").style.display =
                     "flex";
                 document.getElementById("game-container").style.justifyContent =
-                    "center";
+                    "flex-start";
                 document.getElementById("role-display").innerText =
                     `你是: 玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
                 log(`加入房間 ${roomId}，你是 P${playerNum}`);
