@@ -48,6 +48,8 @@ app.get("/version", (req, res) => {
 // 遊戲房間狀態
 const rooms = {};
 const RECONNECT_WINDOW_MS = 60 * 1000;
+const SOLO_MODES = new Set(["solo", "sim-bots", "bots-vs-bots"]);
+const isSoloMode = (mode) => SOLO_MODES.has(mode);
 
 const cleanupRoomPlayers = (room) => {
     const now = Date.now();
@@ -73,8 +75,8 @@ const buildRoomList = () => {
         roomId,
         players: room.players.length,
         mode: room.mode,
-        maxPlayers: room.mode === "solo" ? 1 : 2,
-        canJoin: room.mode !== "solo" && room.players.length < 2,
+        maxPlayers: isSoloMode(room.mode) ? 1 : 2,
+        canJoin: !isSoloMode(room.mode) && room.players.length < 2,
     }));
 };
 
@@ -141,11 +143,11 @@ io.on("connection", (socket) => {
         }
 
         const room = rooms[roomId];
-        if (room.mode === "solo" && requestedMode !== room.mode) {
+        if (isSoloMode(room.mode) && requestedMode !== room.mode) {
             socket.emit("errorMsg", "房間模式不符");
             return;
         }
-        if (room.mode !== "solo" && requestedMode === "solo") {
+        if (!isSoloMode(room.mode) && isSoloMode(requestedMode)) {
             socket.emit("errorMsg", "房間模式不符");
             return;
         }
@@ -153,7 +155,7 @@ io.on("connection", (socket) => {
         cleanupRoomPlayers(room);
 
         if (
-            room.mode === "solo" &&
+            isSoloMode(room.mode) &&
             room.hostPlayerId &&
             room.hostPlayerId !== resolvedPlayerId
         ) {
@@ -181,7 +183,7 @@ io.on("connection", (socket) => {
                 roomId,
                 roomMode: room.mode,
                 isSoloHost:
-                    room.mode === "solo" &&
+                    isSoloMode(room.mode) &&
                     room.hostPlayerId === resolvedPlayerId,
             });
             emitPlayerList(roomId);
@@ -201,7 +203,7 @@ io.on("connection", (socket) => {
             return;
         }
 
-        if (room.mode === "solo") {
+        if (isSoloMode(room.mode)) {
             room.hostPlayerId = resolvedPlayerId;
         }
 
@@ -225,7 +227,7 @@ io.on("connection", (socket) => {
             roomId,
             roomMode: room.mode,
             isSoloHost:
-                room.mode === "solo" &&
+                isSoloMode(room.mode) &&
                 room.hostPlayerId === resolvedPlayerId,
         });
 
@@ -242,7 +244,7 @@ io.on("connection", (socket) => {
 
         emitRoomList();
 
-        if (room.mode === "solo") {
+        if (isSoloMode(room.mode)) {
             io.to(roomId).emit("gameStart", { msg: "單人模式開始！" });
         } else if (room.players.length === 2) {
             io.to(roomId).emit("gameStart", { msg: "遊戲開始！" });
