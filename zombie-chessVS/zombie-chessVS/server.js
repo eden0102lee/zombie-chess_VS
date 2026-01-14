@@ -3,6 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { execSync } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 const server = http.createServer(app);
@@ -24,6 +25,8 @@ const gitVersion = (() => {
     }
 })();
 
+app.use(express.json({ limit: "5mb" }));
+
 // 提供靜態檔案 (HTML, CSS)
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -39,6 +42,30 @@ app.get("/health", (req, res) => {
 
 app.get("/version", (req, res) => {
     res.status(200).json({ version: gitVersion });
+});
+
+app.post("/training-data", (req, res) => {
+    const payload = req.body;
+    if (!payload || !Array.isArray(payload.data)) {
+        res.status(400).json({ error: "invalid payload" });
+        return;
+    }
+
+    const storageDir = path.join(__dirname, "training-data");
+    fs.mkdirSync(storageDir, { recursive: true });
+    const safeRoomId = String(payload.roomId || "room")
+        .replace(/[^a-zA-Z0-9_-]/g, "")
+        .slice(0, 32);
+    const filename = `training-${safeRoomId}-${Date.now()}.json`;
+    const filePath = path.join(storageDir, filename);
+
+    fs.writeFile(filePath, JSON.stringify(payload, null, 2), (err) => {
+        if (err) {
+            res.status(500).json({ error: "failed to save" });
+            return;
+        }
+        res.status(201).json({ saved: true, file: filename });
+    });
 });
 
 // 遊戲房間狀態
