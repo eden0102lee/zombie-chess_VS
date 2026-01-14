@@ -280,7 +280,11 @@ io.on("connection", (socket) => {
                 player.connected = false;
                 player.disconnectedAt = Date.now();
                 player.id = null;
-                io.to(roomId).emit("playerDisconnected");
+                io.to(roomId).emit("playerDisconnected", {
+                    nickname: player.nickname || `P${player.num}`,
+                    playerNum: player.num,
+                    countdownSeconds: Math.ceil(RECONNECT_WINDOW_MS / 1000),
+                });
                 emitRoomList();
                 setTimeout(() => {
                     const latestRoom = rooms[roomId];
