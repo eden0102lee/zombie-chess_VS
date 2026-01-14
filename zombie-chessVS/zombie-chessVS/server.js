@@ -78,6 +78,18 @@ const emitRoomList = () => {
     io.emit("roomsUpdated", buildRoomList());
 };
 
+const emitPlayerList = (roomId) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    io.to(roomId).emit(
+        "playerListUpdated",
+        room.players.map((player) => ({
+            num: player.num,
+            nickname: player.nickname || "",
+        })),
+    );
+};
+
 io.on("connection", (socket) => {
     console.log("一位使用者連線:", socket.id);
 
@@ -95,6 +107,8 @@ io.on("connection", (socket) => {
             typeof payload === "string" ? "multi" : payload?.mode || "multi";
         const playerId =
             typeof payload === "string" ? null : payload?.playerId || null;
+        const nickname =
+            typeof payload === "string" ? "" : payload?.nickname?.trim() || "";
         if (!roomId) {
             socket.emit("errorMsg", "房間號碼無效");
             return;
@@ -132,6 +146,7 @@ io.on("connection", (socket) => {
             existingPlayer.id = socket.id;
             existingPlayer.connected = true;
             existingPlayer.disconnectedAt = null;
+            existingPlayer.nickname = nickname;
             socket.join(roomId);
             socket.emit("playerAssigned", {
                 playerNum: existingPlayer.num,
@@ -141,6 +156,7 @@ io.on("connection", (socket) => {
                     room.mode === "solo" &&
                     room.hostPlayerId === resolvedPlayerId,
             });
+            emitPlayerList(roomId);
             if (room.boardState) {
                 socket.emit("stateUpdated", {
                     board: room.boardState.board,
@@ -166,6 +182,7 @@ io.on("connection", (socket) => {
             id: socket.id,
             num: playerNum,
             playerId: resolvedPlayerId,
+            nickname,
             connected: true,
             disconnectedAt: null,
         });
@@ -184,6 +201,7 @@ io.on("connection", (socket) => {
                 room.hostPlayerId === resolvedPlayerId,
         });
 
+        emitPlayerList(roomId);
         // 補發狀態給後加入者
         if (room.boardState) {
             socket.emit("stateUpdated", {
