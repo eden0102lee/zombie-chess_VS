@@ -32,7 +32,9 @@ const buildRoomList = () =>
     Object.entries(rooms).map(([roomId, room]) => ({
         roomId,
         players: room.players.length,
-        canJoin: room.players.length < 2,
+        mode: room.mode,
+        maxPlayers: room.mode === "solo" ? 1 : 2,
+        canJoin: room.mode !== "solo" && room.players.length < 2,
     }));
 
 const emitRoomList = () => {
@@ -49,16 +51,32 @@ io.on("connection", (socket) => {
     });
 
     // 1. 玩家加入房間
-    socket.on("joinRoom", (roomId) => {
+    socket.on("joinRoom", (payload) => {
+        const roomId =
+            typeof payload === "string" ? payload : payload?.roomId;
+        const requestedMode =
+            typeof payload === "string" ? "multi" : payload?.mode || "multi";
+        if (!roomId) {
+            socket.emit("errorMsg", "房間號碼無效");
+            return;
+        }
+
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 players: [],
                 boardState: null,
                 currentTurn: 1,
+                mode: requestedMode,
+                hostId: null,
             };
         }
 
         const room = rooms[roomId];
+
+        if (room.mode === "solo" && room.hostId && room.hostId !== socket.id) {
+            socket.emit("errorMsg", "此房間為單人房間，無法加入");
+            return;
+        }
 
         // 檢查重複加入
         const existingPlayer = room.players.find((p) => p.id === socket.id);
@@ -66,6 +84,8 @@ io.on("connection", (socket) => {
             socket.emit("playerAssigned", {
                 playerNum: existingPlayer.num,
                 roomId,
+                roomMode: room.mode,
+                isSoloHost: room.mode === "solo" && room.hostId === socket.id,
             });
             if (room.boardState) {
                 socket.emit("stateUpdated", {
@@ -83,13 +103,22 @@ io.on("connection", (socket) => {
             return;
         }
 
+        if (room.mode === "solo") {
+            room.hostId = socket.id;
+        }
+
         const playerNum = room.players.length + 1;
         room.players.push({ id: socket.id, num: playerNum });
         socket.join(roomId);
 
         console.log(`玩家 ${socket.id} 加入房間 ${roomId} 作為 P${playerNum}`);
 
-        socket.emit("playerAssigned", { playerNum, roomId });
+        socket.emit("playerAssigned", {
+            playerNum,
+            roomId,
+            roomMode: room.mode,
+            isSoloHost: room.mode === "solo" && room.hostId === socket.id,
+        });
 
         // 補發狀態給後加入者
         if (room.boardState) {
@@ -103,7 +132,9 @@ io.on("connection", (socket) => {
 
         emitRoomList();
 
-        if (room.players.length === 2) {
+        if (room.mode === "solo") {
+            io.to(roomId).emit("gameStart", { msg: "單人模式開始！" });
+        } else if (room.players.length === 2) {
             io.to(roomId).emit("gameStart", { msg: "遊戲開始！" });
         }
     });
