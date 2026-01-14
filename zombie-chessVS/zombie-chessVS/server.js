@@ -43,15 +43,36 @@ app.get("/version", (req, res) => {
 
 // 遊戲房間狀態
 const rooms = {};
+const RECONNECT_WINDOW_MS = 60 * 1000;
 
-const buildRoomList = () =>
-    Object.entries(rooms).map(([roomId, room]) => ({
+const cleanupRoomPlayers = (room) => {
+    const now = Date.now();
+    room.players = room.players.filter(
+        (player) =>
+            !player.disconnectedAt ||
+            now - player.disconnectedAt < RECONNECT_WINDOW_MS,
+    );
+};
+
+const cleanupRooms = () => {
+    Object.entries(rooms).forEach(([roomId, room]) => {
+        cleanupRoomPlayers(room);
+        if (room.players.length === 0) {
+            delete rooms[roomId];
+        }
+    });
+};
+
+const buildRoomList = () => {
+    cleanupRooms();
+    return Object.entries(rooms).map(([roomId, room]) => ({
         roomId,
         players: room.players.length,
         mode: room.mode,
         maxPlayers: room.mode === "solo" ? 1 : 2,
         canJoin: room.mode !== "solo" && room.players.length < 2,
     }));
+};
 
 const emitRoomList = () => {
     io.emit("roomsUpdated", buildRoomList());
@@ -72,10 +93,13 @@ io.on("connection", (socket) => {
             typeof payload === "string" ? payload : payload?.roomId;
         const requestedMode =
             typeof payload === "string" ? "multi" : payload?.mode || "multi";
+        const playerId =
+            typeof payload === "string" ? null : payload?.playerId || null;
         if (!roomId) {
             socket.emit("errorMsg", "房間號碼無效");
             return;
         }
+        const resolvedPlayerId = playerId || socket.id;
 
         if (!rooms[roomId]) {
             rooms[roomId] = {
@@ -83,25 +107,39 @@ io.on("connection", (socket) => {
                 boardState: null,
                 currentTurn: 1,
                 mode: requestedMode,
-                hostId: null,
+                hostPlayerId: null,
             };
         }
 
         const room = rooms[roomId];
 
-        if (room.mode === "solo" && room.hostId && room.hostId !== socket.id) {
+        cleanupRoomPlayers(room);
+
+        if (
+            room.mode === "solo" &&
+            room.hostPlayerId &&
+            room.hostPlayerId !== resolvedPlayerId
+        ) {
             socket.emit("errorMsg", "此房間為單人房間，無法加入");
             return;
         }
 
         // 檢查重複加入
-        const existingPlayer = room.players.find((p) => p.id === socket.id);
+        const existingPlayer = room.players.find(
+            (p) => p.playerId === resolvedPlayerId,
+        );
         if (existingPlayer) {
+            existingPlayer.id = socket.id;
+            existingPlayer.connected = true;
+            existingPlayer.disconnectedAt = null;
+            socket.join(roomId);
             socket.emit("playerAssigned", {
                 playerNum: existingPlayer.num,
                 roomId,
                 roomMode: room.mode,
-                isSoloHost: room.mode === "solo" && room.hostId === socket.id,
+                isSoloHost:
+                    room.mode === "solo" &&
+                    room.hostPlayerId === resolvedPlayerId,
             });
             if (room.boardState) {
                 socket.emit("stateUpdated", {
@@ -120,20 +158,30 @@ io.on("connection", (socket) => {
         }
 
         if (room.mode === "solo") {
-            room.hostId = socket.id;
+            room.hostPlayerId = resolvedPlayerId;
         }
 
         const playerNum = room.players.length + 1;
-        room.players.push({ id: socket.id, num: playerNum });
+        room.players.push({
+            id: socket.id,
+            num: playerNum,
+            playerId: resolvedPlayerId,
+            connected: true,
+            disconnectedAt: null,
+        });
         socket.join(roomId);
 
-        console.log(`玩家 ${socket.id} 加入房間 ${roomId} 作為 P${playerNum}`);
+        console.log(
+            `玩家 ${resolvedPlayerId} (${socket.id}) 加入房間 ${roomId} 作為 P${playerNum}`,
+        );
 
         socket.emit("playerAssigned", {
             playerNum,
             roomId,
             roomMode: room.mode,
-            isSoloHost: room.mode === "solo" && room.hostId === socket.id,
+            isSoloHost:
+                room.mode === "solo" &&
+                room.hostPlayerId === resolvedPlayerId,
         });
 
         // 補發狀態給後加入者
@@ -185,13 +233,22 @@ io.on("connection", (socket) => {
         console.log("使用者斷線:", socket.id);
         for (const roomId in rooms) {
             const room = rooms[roomId];
-            const playerIndex = room.players.findIndex(
-                (p) => p.id === socket.id,
-            );
-            if (playerIndex !== -1) {
+            const player = room.players.find((p) => p.id === socket.id);
+            if (player) {
+                player.connected = false;
+                player.disconnectedAt = Date.now();
+                player.id = null;
                 io.to(roomId).emit("playerDisconnected");
-                delete rooms[roomId];
                 emitRoomList();
+                setTimeout(() => {
+                    const latestRoom = rooms[roomId];
+                    if (!latestRoom) return;
+                    cleanupRoomPlayers(latestRoom);
+                    if (latestRoom.players.length === 0) {
+                        delete rooms[roomId];
+                    }
+                    emitRoomList();
+                }, RECONNECT_WINDOW_MS + 500);
                 break;
             }
         }

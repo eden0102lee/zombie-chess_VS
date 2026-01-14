@@ -51,6 +51,29 @@
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             }
+            .lobby-fields {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+            .lobby-row {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                color: #e2e8f0;
+            }
+            .lobby-row label {
+                width: 52px;
+                text-align: right;
+                font-size: 14px;
+                color: #cbd5f5;
+            }
+            .lobby-row input {
+                margin-bottom: 0;
+                width: 220px;
+            }
             .lobby-input {
                 padding: 15px;
                 font-size: 18px;
@@ -509,6 +532,21 @@
                 z-index: 10001;
                 backdrop-filter: blur(6px);
             }
+            .nickname-field {
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+            }
+            .nickname-field input {
+                padding-right: 64px;
+            }
+            .nickname-id-overlay {
+                position: absolute;
+                right: 10px;
+                font-size: 11px;
+                color: #6b7280;
+                pointer-events: none;
+            }
         </style>
         <script src="/socket.io/socket.io.js"></script>
     </head>
@@ -522,13 +560,34 @@
                 <p style="color: #ccc; margin-bottom: 30px">
                     輸入房間號碼與朋友對戰
                 </p>
-                <input
-                    type="text"
-                    id="room-id"
-                    class="lobby-input"
-                    placeholder="例如: 8888"
-                    value="1234"
-                />
+                <div class="lobby-fields">
+                    <div class="lobby-row">
+                        <label for="player-nickname">暱稱:</label>
+                        <span class="nickname-field">
+                            <input
+                                type="text"
+                                id="player-nickname"
+                                class="lobby-input"
+                                maxlength="12"
+                                placeholder="輸入暱稱"
+                            />
+                            <span
+                                class="nickname-id-overlay"
+                                id="player-id-display"
+                            ></span>
+                        </span>
+                    </div>
+                    <div class="lobby-row">
+                        <label for="room-id">房號:</label>
+                        <input
+                            type="text"
+                            id="room-id"
+                            class="lobby-input"
+                            placeholder="例如: 8888"
+                            value=""
+                        />
+                    </div>
+                </div>
                 <div style="margin-bottom: 12px; color: #cbd5f5">
                     <label style="display: inline-flex; gap: 8px; align-items: center">
                         <input type="checkbox" id="solo-mode" />
@@ -776,9 +835,47 @@
             let isSoloHost = false;
             const gitVersionElement = document.getElementById("git-version");
             const roomInput = document.getElementById("room-id");
+            const playerIdDisplay = document.getElementById("player-id-display");
+            const nicknameInput = document.getElementById("player-nickname");
+            const PLAYER_ID_KEY = "zombie-chess-player-id";
+            const PLAYER_NICKNAME_KEY = "zombie-chess-player-nickname";
+            const playerId = (() => {
+                const existing = localStorage.getItem(PLAYER_ID_KEY);
+                if (existing) {
+                    return existing;
+                }
+                const generated =
+                    (window.crypto?.randomUUID && window.crypto.randomUUID()) ||
+                    `P${Math.random().toString(36).slice(2, 10)}`;
+                localStorage.setItem(PLAYER_ID_KEY, generated);
+                return generated;
+            })();
+            const shortPlayerId = playerId
+                .replace(/[^a-zA-Z0-9]/g, "")
+                .slice(-6);
+
+            if (playerIdDisplay) {
+                const idText = shortPlayerId || playerId;
+                playerIdDisplay.innerText = idText ? `-${idText}` : "";
+            }
+            if (nicknameInput) {
+                nicknameInput.value =
+                    localStorage.getItem(PLAYER_NICKNAME_KEY) || "";
+                nicknameInput.addEventListener("input", () => {
+                    localStorage.setItem(
+                        PLAYER_NICKNAME_KEY,
+                        nicknameInput.value.trim(),
+                    );
+                });
+            }
 
             if (roomInput) {
                 roomInput.dataset.userEdited = "false";
+                if (!roomInput.value) {
+                    roomInput.value = Math.floor(
+                        1000 + Math.random() * 9000,
+                    ).toString();
+                }
                 roomInput.addEventListener("input", () => {
                     roomInput.dataset.userEdited = "true";
                 });
@@ -806,6 +903,7 @@
                 socket.emit("joinRoom", {
                     roomId: room,
                     mode: isSolo ? "solo" : "multi",
+                    playerId,
                 });
                 document.getElementById("conn-status").innerText = "連線中...";
             }
