@@ -1385,7 +1385,7 @@
                 if (m.type === "sacrifice") {
                     mover.forEach((p) => supply[p.player][p.type]++);
                     emitAction(
-                        `${actionBase}${formatCell(m.r, m.c)} 捨 +${m.score}`,
+                        `${actionBase}${formatCell(m.r, m.c)} 捨身 +${m.score}`,
                     );
                     enterComboWaitState();
                     return;
@@ -1402,10 +1402,10 @@
                 // 移動/堆疊 (非跳躍)：直接結束
                 if (m.type === "stack") {
                     board[m.r][m.c].push(...mover);
-                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 疊`);
+                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 堆疊`);
                 } else if (m.type === "move") {
                     board[m.r][m.c] = mover;
-                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 移`);
+                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 移動`);
                 } else {
                     board[m.r][m.c] = mover;
                 }
@@ -1430,11 +1430,12 @@
 
                 // 若無下一步，進入「等待結束」狀態，而非自動結束
                 // 這是為了滿足「所有跳躍操控改為手動結束」的需求
-                if (m.type === "jump") {
-                    enterComboWaitState();
-                } else {
-                    endTurn(); // 普通移動還是自動結束比較順暢
-                }
+                //if (m.type === "jump") {
+                //    enterComboWaitState();
+                //} else {
+                //    endTurn(); // 普通移動還是自動結束比較順暢
+                //}
+                endTurn();
             }
 
             function enterComboWaitState() {
