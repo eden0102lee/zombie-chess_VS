@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { execSync } = require("child_process");
 const path = require("path");
 
 const app = express();
@@ -11,6 +12,17 @@ const io = new Server(server, {
         methods: ["GET", "POST"],
     },
 });
+
+const gitVersion = (() => {
+    try {
+        return execSync("git rev-parse --short HEAD", { cwd: __dirname })
+            .toString()
+            .trim();
+    } catch (error) {
+        console.warn("無法取得 git 版本資訊:", error.message);
+        return "unknown";
+    }
+})();
 
 // 提供靜態檔案 (HTML, CSS)
 app.use(express.static(path.join(__dirname, "public")));
@@ -23,6 +35,10 @@ app.get("/", (req, res) => {
 // 另外增加一個專門的 health check API，有些平台會找這個
 app.get("/health", (req, res) => {
     res.status(200).send("OK");
+});
+
+app.get("/version", (req, res) => {
+    res.status(200).json({ version: gitVersion });
 });
 
 // 遊戲房間狀態
