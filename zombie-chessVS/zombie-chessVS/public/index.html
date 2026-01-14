@@ -509,49 +509,6 @@
                 color: #e2e8f0;
             }
 
-            .training-panel {
-                margin: 10px 0 0;
-                padding: 10px;
-                border-radius: 10px;
-                border: 1px dashed rgba(148, 163, 184, 0.4);
-                background: rgba(15, 23, 42, 0.6);
-                display: none;
-                flex-direction: column;
-                gap: 10px;
-            }
-            .training-panel.is-visible {
-                display: flex;
-            }
-            .training-status {
-                font-size: 12px;
-                color: #cbd5f5;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-            }
-            .training-status span {
-                color: #94a3b8;
-            }
-            .training-actions {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-            }
-            .training-actions .btn {
-                margin-top: 0;
-            }
-            .training-toggle {
-                background: #22c55e;
-                border-color: #22c55e;
-                color: #062e1a;
-            }
-            .training-toggle.off {
-                background: #94a3b8;
-                border-color: #94a3b8;
-                color: #1f2937;
-            }
-
             .my-turn {
                 box-shadow: 0 0 15px var(--gold);
                 border-color: var(--gold);
@@ -815,45 +772,6 @@
                                 取消選取
                             </button>
                         </div>
-                        <div class="training-panel" id="training-panel">
-                            <div class="training-status">
-                                <strong>AI 訓練</strong>
-                                <span id="training-status-text">未開始</span>
-                            </div>
-                            <div class="training-actions">
-                                <button
-                                    class="btn training-toggle off"
-                                    id="training-toggle-btn"
-                                    onclick="toggleTraining()"
-                                >
-                                    開始訓練
-                                </button>
-                                <button
-                                    class="btn"
-                                    id="training-download-btn"
-                                    onclick="downloadTrainingData()"
-                                >
-                                    下載資料
-                                </button>
-                                <button
-                                    class="btn"
-                                    id="training-clear-btn"
-                                    onclick="clearTrainingData()"
-                                >
-                                    清除資料
-                                </button>
-                                <button
-                                    class="btn"
-                                    id="training-tip-btn"
-                                    onclick="showTrainingTips()"
-                                >
-                                    使用說明
-                                </button>
-                            </div>
-                            <div class="training-status">
-                                已記錄 <strong id="training-count">0</strong> 筆
-                            </div>
-                        </div>
                         <div class="log-area" id="log"></div>
                     </div>
 
@@ -951,21 +869,10 @@
             const roomInput = document.getElementById("room-id");
             const playerIdDisplay = document.getElementById("player-id-display");
             const nicknameInput = document.getElementById("player-nickname");
-            const trainingPanel = document.getElementById("training-panel");
             const playerNicknames = { 1: "", 2: "" };
             const PLAYER_ID_KEY = "zombie-chess-player-id";
             const PLAYER_NICKNAME_KEY = "zombie-chess-player-nickname";
-            const TRAINING_ENABLED_KEY = "zombie-chess-training-enabled";
-            const TRAINING_DATA_KEY = "zombie-chess-training-data";
-            const TRAINING_MAX_ENTRIES = 2000;
-            const TRAINING_PANEL_TOGGLE_TAPS = 5;
-            const TRAINING_AUTO_UPLOAD_KEY =
-                "zombie-chess-training-auto-upload";
-            let gitTapCount = 0;
-            let gitTapTimer = null;
             let disconnectCountdownTimer = null;
-            let trainingAutoUpload =
-                localStorage.getItem(TRAINING_AUTO_UPLOAD_KEY) !== "false";
             const playerId = (() => {
                 const existing = localStorage.getItem(PLAYER_ID_KEY);
                 if (existing) {
@@ -1008,48 +915,17 @@
                 });
             }
 
-            function setTrainingPanelVisible(isVisible) {
-                if (!trainingPanel) return;
-                trainingPanel.classList.toggle("is-visible", isVisible);
-            }
-
-            function registerGitVersionTap() {
-                gitTapCount += 1;
-                if (gitTapTimer) {
-                    clearTimeout(gitTapTimer);
-                }
-                gitTapTimer = setTimeout(() => {
-                    gitTapCount = 0;
-                    gitTapTimer = null;
-                }, 1500);
-
-                if (gitTapCount >= TRAINING_PANEL_TOGGLE_TAPS) {
-                    gitTapCount = 0;
-                    const isVisible =
-                        trainingPanel?.classList.contains("is-visible") || false;
-                    setTrainingPanelVisible(!isVisible);
-                }
-            }
-
             fetch("/version")
                 .then((response) => response.json())
                 .then((data) => {
                     const version = data?.version || "unknown";
                     if (gitVersionElement) {
                         gitVersionElement.innerText = `git: ${version}`;
-                        gitVersionElement.addEventListener(
-                            "click",
-                            registerGitVersionTap,
-                        );
                     }
                 })
                 .catch(() => {
                     if (gitVersionElement) {
                         gitVersionElement.innerText = "git: unknown";
-                        gitVersionElement.addEventListener(
-                            "click",
-                            registerGitVersionTap,
-                        );
                     }
                 });
 
@@ -1216,10 +1092,6 @@
                     initGameData();
                     syncServer();
                 }
-                if (!trainingSessionId) {
-                    trainingSessionId = `session-${roomId}-${Date.now()}`;
-                }
-                enableTrainingRecording();
             },
             );
 
@@ -1229,7 +1101,6 @@
                 } else {
                     log("對手加入，開局");
                 }
-                enableTrainingRecording();
             });
             socket.on("playerAction", ({ message }) => {
                 log(message);
@@ -1308,14 +1179,6 @@
             let reviveSelection = null;
             let validMoves = [];
             let isComboMode = false;
-            let trainingEnabled =
-                localStorage.getItem(TRAINING_ENABLED_KEY) === "true";
-            let trainingData = loadTrainingData();
-            let trainingUploadInProgress = false;
-            let trainingSessionId = null;
-            let trainingPendingDownload = false;
-
-            updateTrainingUI();
 
             function initGameData() {
                 scores = { 1: 0, 2: 0 };
@@ -1351,186 +1214,6 @@
                 render();
             }
 
-            function loadTrainingData() {
-                const raw = localStorage.getItem(TRAINING_DATA_KEY);
-                if (!raw) return [];
-                try {
-                    const parsed = JSON.parse(raw);
-                    return Array.isArray(parsed) ? parsed : [];
-                } catch (err) {
-                    return [];
-                }
-            }
-
-            function saveTrainingData() {
-                localStorage.setItem(
-                    TRAINING_DATA_KEY,
-                    JSON.stringify(trainingData),
-                );
-                updateTrainingUI();
-            }
-
-            function updateTrainingUI() {
-                const statusText = document.getElementById(
-                    "training-status-text",
-                );
-                const toggleBtn = document.getElementById(
-                    "training-toggle-btn",
-                );
-                const countEl = document.getElementById("training-count");
-                const downloadBtn = document.getElementById(
-                    "training-download-btn",
-                );
-                const clearBtn = document.getElementById("training-clear-btn");
-                const tipBtn = document.getElementById("training-tip-btn");
-
-                if (statusText) {
-                    statusText.innerText = trainingEnabled
-                        ? "記錄中"
-                        : "未開始";
-                }
-                if (toggleBtn) {
-                    toggleBtn.classList.toggle("off", !trainingEnabled);
-                    toggleBtn.innerText = trainingEnabled ? "停止訓練" : "開始訓練";
-                }
-                if (countEl) {
-                    countEl.innerText = trainingData.length.toString();
-                }
-                if (downloadBtn) {
-                    downloadBtn.disabled = trainingData.length === 0;
-                }
-                if (clearBtn) {
-                    clearBtn.disabled = trainingData.length === 0;
-                }
-                if (tipBtn) {
-                    tipBtn.innerText = trainingAutoUpload
-                        ? "提示：自動回傳中"
-                        : "提示";
-                }
-            }
-
-            function toggleTraining() {
-                trainingEnabled = !trainingEnabled;
-                localStorage.setItem(
-                    TRAINING_ENABLED_KEY,
-                    trainingEnabled ? "true" : "false",
-                );
-                updateTrainingUI();
-            }
-
-            function showTrainingTips() {
-                alert(
-                    "開啟後會記錄每次移動、復活與回合結束的棋盤狀態。\n預設會在對局結束時自動下載並回傳伺服器存檔。\n建議用單人房練習，完成對局後可取得 JSON 檔作為訓練資料。",
-                );
-            }
-
-            function enableTrainingRecording() {
-                if (trainingEnabled) return;
-                trainingEnabled = true;
-                localStorage.setItem(TRAINING_ENABLED_KEY, "true");
-                updateTrainingUI();
-            }
-
-            async function uploadTrainingData(reason = "manual") {
-                if (!trainingAutoUpload || !trainingData.length) {
-                    return false;
-                }
-                if (trainingUploadInProgress) {
-                    return false;
-                }
-                trainingUploadInProgress = true;
-                try {
-                    const response = await fetch("/api/training-upload", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            roomId: currentRoomId,
-                            reason,
-                            sessionId:
-                                trainingSessionId || `session-${Date.now()}`,
-                            data: trainingData,
-                        }),
-                    });
-                    if (!response.ok) {
-                        console.warn("訓練資料回傳失敗", response.status);
-                        return false;
-                    }
-                    return true;
-                } catch (error) {
-                    console.warn("訓練資料回傳失敗", error);
-                    return false;
-                } finally {
-                    trainingUploadInProgress = false;
-                }
-            }
-
-            async function finalizeTrainingSession(reason) {
-                if (!trainingEnabled || !trainingData.length) return;
-                if (trainingPendingDownload) return;
-                trainingPendingDownload = true;
-                downloadTrainingData();
-                const uploaded = await uploadTrainingData(reason);
-                if (uploaded) {
-                    clearTrainingData();
-                }
-                trainingPendingDownload = false;
-            }
-
-            function clearTrainingData() {
-                trainingData = [];
-                saveTrainingData();
-            }
-
-            function downloadTrainingData() {
-                if (!trainingData.length) {
-                    alert("尚無訓練資料");
-                    return;
-                }
-                const blob = new Blob(
-                    [JSON.stringify(trainingData, null, 2)],
-                    { type: "application/json" },
-                );
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = `zombie-chess-training-${Date.now()}.json`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(url);
-            }
-
-            function recordTrainingEvent(actionType, details, playerOverride) {
-                if (!trainingEnabled) return;
-                if (!trainingSessionId) {
-                    trainingSessionId =
-                        `session-${currentRoomId}-${Date.now()}`;
-                }
-                const snapshot = {
-                    timestamp: new Date().toISOString(),
-                    roomId: currentRoomId,
-                    sessionId: trainingSessionId,
-                    player: playerOverride ?? currentPlayer,
-                    action: actionType,
-                    details,
-                    state: JSON.parse(
-                        JSON.stringify({
-                            board,
-                            scores,
-                            supply,
-                            turn: currentPlayer,
-                        }),
-                    ),
-                };
-                trainingData.push(snapshot);
-                if (trainingData.length > TRAINING_MAX_ENTRIES) {
-                    trainingData = trainingData.slice(
-                        trainingData.length - TRAINING_MAX_ENTRIES,
-                    );
-                }
-                saveTrainingData();
-            }
-
             function syncServer() {
                 socket.emit("updateGame", {
                     roomId: currentRoomId,
@@ -1554,8 +1237,6 @@
                         div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
                         document.body.appendChild(div);
                     }, 100);
-                    recordTrainingEvent("gameEnd", { winner });
-                    void finalizeTrainingSession("game_end");
                 }
             }
 
@@ -1670,10 +1351,6 @@
                                 type: t,
                                 val: PIECE_VALS[t],
                                 player: currentPlayer,
-                            });
-                            recordTrainingEvent("revive", {
-                                pieceType: t,
-                                target: { r, c },
                             });
                             emitAction(
                                 `${formatPlayerShort(currentPlayer)} 復活 ${t} → ${formatCell(r, c)}`,
@@ -1822,13 +1499,6 @@
                     sr,
                     sc,
                 )}→`;
-                const trainingDetails = {
-                    type: m.type,
-                    from: { r: sr, c: sc },
-                    to: { r: m.r, c: m.c },
-                    score: m.score || 0,
-                    victims: (m.victims || []).map((v) => ({ ...v })),
-                };
 
                 // 吃子
                 if (["jump", "sacrifice", "jump-stack"].includes(m.type)) {
@@ -1848,7 +1518,6 @@
                     emitAction(
                         `${actionBase}${formatCell(m.r, m.c)} 捨身 +${m.score}`,
                     );
-                    recordTrainingEvent("sacrifice", trainingDetails);
                     enterComboWaitState();
                     return;
                 }
@@ -1857,7 +1526,6 @@
                     emitAction(
                         `${actionBase}${formatCell(m.r, m.c)} 跳疊 +${m.score}`,
                     );
-                    recordTrainingEvent("jump-stack", trainingDetails);
                     enterComboWaitState();
                     return;
                 }
@@ -1866,11 +1534,9 @@
                 if (m.type === "stack") {
                     board[m.r][m.c].push(...mover);
                     emitAction(`${actionBase}${formatCell(m.r, m.c)} 堆疊`);
-                    recordTrainingEvent("stack", trainingDetails);
                 } else if (m.type === "move") {
                     board[m.r][m.c] = mover;
                     emitAction(`${actionBase}${formatCell(m.r, m.c)} 移動`);
-                    recordTrainingEvent("move", trainingDetails);
                 } else {
                     board[m.r][m.c] = mover;
                 }
@@ -1880,7 +1546,6 @@
                     emitAction(
                         `${actionBase}${formatCell(m.r, m.c)} 跳 +${m.score}`,
                     );
-                    recordTrainingEvent("jump", trainingDetails);
                     let nextMoves = calcMoves(m.r, m.c).filter((nm) =>
                         ["jump", "sacrifice", "jump-stack"].includes(nm.type),
                     );
@@ -1929,16 +1594,10 @@
 
             function endTurn() {
                 if (!canControlPlayer(currentPlayer)) return;
-                const previousPlayer = currentPlayer;
                 emitAction(`${formatPlayerShort(currentPlayer)} 回合結束`);
                 currentPlayer = currentPlayer === 1 ? 2 : 1;
                 isComboMode = false;
                 resetSelection();
-                recordTrainingEvent(
-                    "endTurn",
-                    { nextPlayer: currentPlayer },
-                    previousPlayer,
-                );
                 syncServer();
             }
 
