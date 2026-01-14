@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>殭屍棋 Offline - AI 模式工作區</title>
+        <link rel="stylesheet" href="/offline/offline.css" />
+    </head>
+    <body>
+        <main>
+            <header>
+                <div>
+                    <h1>離線模式工作區</h1>
+                    <p>獨立於線上穩定版的實驗場，用於 AI 對局與訓練流程。</p>
+                </div>
+                <span class="tag">Offline Sandbox</span>
+            </header>
+
+            <section class="panel">
+                <h2>模式選擇</h2>
+                <div class="mode-grid">
+                    <article class="mode-card" data-mode-card="pve">
+                        <h3>玩家 VS 電腦</h3>
+                        <p>提供可調整難度的本地 AI 對手。</p>
+                        <button type="button">設定模式</button>
+                    </article>
+                    <article class="mode-card" data-mode-card="evs">
+                        <h3>電腦 VS 電腦</h3>
+                        <p>用於快速測試 AI 策略與棋盤規則。</p>
+                        <button type="button">配置對戰</button>
+                    </article>
+                    <article class="mode-card" data-mode-card="training">
+                        <h3>AI 訓練</h3>
+                        <p>整理對局資料、輸出訓練樣本。</p>
+                        <button type="button" class="secondary">規劃流程</button>
+                    </article>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2 data-mode-title>玩家 VS 電腦</h2>
+                <p data-mode-summary>
+                    提供可自訂難度的本地 AI 對手，適合測試棋盤規則與操作節奏。
+                </p>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <h4>目前支援</h4>
+                        <ul data-status-list></ul>
+                    </div>
+                    <div class="detail-item">
+                        <h4>接下來要做</h4>
+                        <ul data-timeline-list></ul>
+                    </div>
+                </div>
+                <div class="status-row">
+                    <span class="status-chip">不影響線上版本</span>
+                    <span class="status-chip">本地計算</span>
+                    <span class="status-chip">資料可匯出</span>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>離線版本說明</h2>
+                <p class="roadmap">
+                    本頁面位於 <strong>/offline</strong>，與目前線上版本分離，
+                    可自由加入 AI 決策、訓練輸出、模擬批次等功能。
+                    建議後續將 AI 核心邏輯集中在獨立模組，便於重用與測試。
+                </p>
+            </section>
+
+            <footer>
+                <span>返回線上版：</span>
+                <a href="/">殭屍棋 Online</a>
+            </footer>
+        </main>
+
+        <script src="/offline/offline.js"></script>
+    </body>
+</html>
