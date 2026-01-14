@@ -86,6 +86,9 @@
                 font-size: 16px;
                 color: #e2e8f0;
             }
+            .room-section-title--spaced {
+                margin-top: 18px;
+            }
             .room-list ul {
                 list-style: none;
                 padding: 0;
@@ -102,6 +105,17 @@
                 border: 1px solid rgba(148, 163, 184, 0.3);
                 border-radius: 12px;
                 padding: 10px 12px;
+            }
+            .room-item--inactive {
+                background: rgba(148, 163, 184, 0.2);
+                border-color: rgba(148, 163, 184, 0.5);
+            }
+            .room-item--inactive .room-meta span {
+                color: #e2e8f0;
+            }
+            .room-item--inactive .room-join {
+                background: #94a3b8;
+                color: #1f2937;
             }
             .room-meta {
                 display: flex;
@@ -528,9 +542,14 @@
                     style="margin-top: 20px; color: #f87171; font-size: 14px"
                 ></p>
                 <div class="room-list">
-                    <h2>可加入房間</h2>
+                    <h2 class="room-section-title">可加入房間</h2>
                     <ul id="room-list"></ul>
                     <div id="room-empty" class="room-empty"></div>
+                    <h2 class="room-section-title room-section-title--spaced">
+                        已存在房間
+                    </h2>
+                    <ul id="room-list-existing"></ul>
+                    <div id="room-existing-empty" class="room-empty"></div>
                     <button class="room-refresh" onclick="requestRoomList()">
                         重新整理列表
                     </button>
@@ -756,6 +775,14 @@
             let roomMode = "multi";
             let isSoloHost = false;
             const gitVersionElement = document.getElementById("git-version");
+            const roomInput = document.getElementById("room-id");
+
+            if (roomInput) {
+                roomInput.dataset.userEdited = "false";
+                roomInput.addEventListener("input", () => {
+                    roomInput.dataset.userEdited = "true";
+                });
+            }
 
             fetch("/version")
                 .then((response) => response.json())
@@ -824,9 +851,66 @@
                 });
             }
 
+            function renderExistingRoomList(rooms) {
+                const list = document.getElementById("room-list-existing");
+                const empty = document.getElementById("room-existing-empty");
+                list.innerHTML = "";
+
+                if (!rooms.length) {
+                    empty.innerText = "目前沒有其他已存在的房間";
+                    return;
+                }
+
+                empty.innerText = "";
+
+                rooms.forEach((room) => {
+                    const li = document.createElement("li");
+                    li.className = "room-item room-item--inactive";
+
+                    const meta = document.createElement("div");
+                    meta.className = "room-meta";
+                    const modeLabel = room.mode === "solo" ? "單人" : "對戰";
+                    meta.innerHTML = `<span>房間 ${room.roomId}</span><small>${modeLabel}｜玩家 ${room.players}/${room.maxPlayers}</small>`;
+
+                    const btn = document.createElement("button");
+                    btn.className = "room-join";
+                    btn.innerText = "已滿";
+                    btn.disabled = true;
+
+                    li.appendChild(meta);
+                    li.appendChild(btn);
+                    list.appendChild(li);
+                });
+            }
+
+            function generateRandomRoomId(existingIds) {
+                let nextId = "";
+                let attempts = 0;
+                do {
+                    nextId = Math.floor(1000 + Math.random() * 9000).toString();
+                    attempts += 1;
+                } while (existingIds.has(nextId) && attempts < 50);
+                return nextId;
+            }
+
+            function syncRoomInputIfExists(rooms) {
+                if (!roomInput || roomInput.dataset.userEdited === "true") {
+                    return;
+                }
+                const existingIds = new Set(
+                    rooms.map((room) => room.roomId.toString()),
+                );
+                if (existingIds.has(roomInput.value)) {
+                    roomInput.value = generateRandomRoomId(existingIds);
+                }
+            }
+
             socket.on("roomsUpdated", (rooms) => {
                 const joinableRooms = rooms.filter((room) => room.canJoin);
+                const existingRooms = rooms.filter((room) => !room.canJoin);
                 renderRoomList(joinableRooms);
+                renderExistingRoomList(existingRooms);
+                syncRoomInputIfExists(rooms);
             });
 
             socket.on(
