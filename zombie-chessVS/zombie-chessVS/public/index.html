@@ -623,7 +623,9 @@
                     </label>
                 </div>
                 <br />
-                <button class="lobby-btn" onclick="joinGame()">創建房間</button>
+                <button class="lobby-btn" onclick="joinGame('create')">
+                    創建房間
+                </button>
                 <p
                     id="conn-status"
                     style="margin-top: 20px; color: #f87171; font-size: 14px"
@@ -870,6 +872,7 @@
             const playerNicknames = { 1: "", 2: "" };
             const PLAYER_ID_KEY = "zombie-chess-player-id";
             const PLAYER_NICKNAME_KEY = "zombie-chess-player-nickname";
+            let disconnectCountdownTimer = null;
             const playerId = (() => {
                 const existing = localStorage.getItem(PLAYER_ID_KEY);
                 if (existing) {
@@ -926,7 +929,7 @@
                     }
                 });
 
-            function joinGame() {
+            function joinGame(action = "create") {
                 const room = document.getElementById("room-id").value;
                 if (!room) return alert("請輸入房間號碼");
                 const isSolo =
@@ -937,6 +940,7 @@
                     mode: isSolo ? "solo" : "multi",
                     playerId,
                     nickname,
+                    action,
                 });
                 document.getElementById("conn-status").innerText = "連線中...";
             }
@@ -973,7 +977,7 @@
                     btn.onclick = () => {
                         document.getElementById("room-id").value =
                             room.roomId;
-                        joinGame();
+                        joinGame("join");
                     };
 
                     li.appendChild(meta);
@@ -982,7 +986,7 @@
                 });
             }
 
-            function renderExistingRoomList(rooms) {
+            function renderExistingRoomList(rooms, lastRoomId) {
                 const list = document.getElementById("room-list-existing");
                 const empty = document.getElementById("room-existing-empty");
                 list.innerHTML = "";
@@ -994,7 +998,14 @@
 
                 empty.innerText = "";
 
-                rooms.forEach((room) => {
+                const orderedRooms = [...rooms].sort((a, b) => {
+                    const aRejoin = a.roomId === lastRoomId;
+                    const bRejoin = b.roomId === lastRoomId;
+                    if (aRejoin !== bRejoin) return aRejoin ? -1 : 1;
+                    return a.roomId.localeCompare(b.roomId);
+                });
+
+                orderedRooms.forEach((room) => {
                     const li = document.createElement("li");
                     li.className = "room-item room-item--inactive";
 
@@ -1005,8 +1016,16 @@
 
                     const btn = document.createElement("button");
                     btn.className = "room-join";
-                    btn.innerText = "已滿";
-                    btn.disabled = true;
+                    const canRejoin = room.roomId === lastRoomId;
+                    btn.innerText = canRejoin ? "重連" : "已滿";
+                    btn.disabled = !canRejoin;
+                    if (canRejoin) {
+                        btn.onclick = () => {
+                            document.getElementById("room-id").value =
+                                room.roomId;
+                            joinGame("join");
+                        };
+                    }
 
                     li.appendChild(meta);
                     li.appendChild(btn);
@@ -1036,11 +1055,15 @@
                 }
             }
 
+            const LAST_ROOM_ID_KEY = "zombie-chess-last-room-id";
+
             socket.on("roomsUpdated", (rooms) => {
                 const joinableRooms = rooms.filter((room) => room.canJoin);
                 const existingRooms = rooms.filter((room) => !room.canJoin);
+                const lastRoomId =
+                    localStorage.getItem(LAST_ROOM_ID_KEY) || "";
                 renderRoomList(joinableRooms);
-                renderExistingRoomList(existingRooms);
+                renderExistingRoomList(existingRooms, lastRoomId);
                 syncRoomInputIfExists(rooms);
             });
 
@@ -1051,6 +1074,7 @@
                 currentRoomId = roomId;
                 roomMode = assignedMode || "multi";
                 isSoloHost = !!solo;
+                localStorage.setItem(LAST_ROOM_ID_KEY, roomId);
                 document.getElementById("lobby-overlay").style.display = "none";
                 document.getElementById("game-container").style.display =
                     "flex";
@@ -1088,10 +1112,42 @@
                 alert(msg);
                 document.getElementById("conn-status").innerText = msg;
             });
-            socket.on("playerDisconnected", () => {
-                alert("對手已斷線！");
-                location.reload();
-            });
+            socket.on(
+                "playerDisconnected",
+                ({ nickname, playerNum, countdownSeconds }) => {
+                    const displayName = nickname || `P${playerNum}`;
+                    const totalSeconds = Number.isFinite(countdownSeconds)
+                        ? countdownSeconds
+                        : 60;
+                    let remaining = totalSeconds;
+
+                    if (disconnectCountdownTimer) {
+                        clearInterval(disconnectCountdownTimer);
+                    }
+
+                    const updateMessage = () => {
+                        const message = `${displayName} 已斷線，${remaining} 秒後將清理房間。`;
+                        log(message);
+                        const turnDisplay =
+                            document.getElementById("turn-display");
+                        if (turnDisplay) {
+                            turnDisplay.innerText = message;
+                        }
+                    };
+
+                    updateMessage();
+
+                    disconnectCountdownTimer = setInterval(() => {
+                        remaining -= 1;
+                        if (remaining <= 0) {
+                            clearInterval(disconnectCountdownTimer);
+                            disconnectCountdownTimer = null;
+                            return;
+                        }
+                        updateMessage();
+                    }, 1000);
+                },
+            );
 
             requestRoomList();
 
@@ -1231,6 +1287,10 @@
                                 player.nickname?.trim() || "";
                         }
                     });
+                }
+                if (disconnectCountdownTimer) {
+                    clearInterval(disconnectCountdownTimer);
+                    disconnectCountdownTimer = null;
                 }
                 updatePlayerLabels();
                 updateRoleDisplay();
