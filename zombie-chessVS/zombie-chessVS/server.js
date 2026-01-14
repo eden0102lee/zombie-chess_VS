@@ -105,6 +105,7 @@ io.on("connection", (socket) => {
             typeof payload === "string" ? payload : payload?.roomId;
         const requestedMode =
             typeof payload === "string" ? "multi" : payload?.mode || "multi";
+        const action = typeof payload === "string" ? "join" : payload?.action;
         const playerId =
             typeof payload === "string" ? null : payload?.playerId || null;
         const nickname =
@@ -114,6 +115,16 @@ io.on("connection", (socket) => {
             return;
         }
         const resolvedPlayerId = playerId || socket.id;
+
+        if (!rooms[roomId] && action === "join") {
+            socket.emit("errorMsg", "房間不存在，請重新整理列表");
+            return;
+        }
+
+        if (rooms[roomId] && action === "create") {
+            socket.emit("errorMsg", "房間已存在，請改用加入");
+            return;
+        }
 
         if (!rooms[roomId]) {
             rooms[roomId] = {
@@ -126,6 +137,14 @@ io.on("connection", (socket) => {
         }
 
         const room = rooms[roomId];
+        if (room.mode === "solo" && requestedMode !== room.mode) {
+            socket.emit("errorMsg", "房間模式不符");
+            return;
+        }
+        if (room.mode !== "solo" && requestedMode === "solo") {
+            socket.emit("errorMsg", "房間模式不符");
+            return;
+        }
 
         cleanupRoomPlayers(room);
 
@@ -135,6 +154,11 @@ io.on("connection", (socket) => {
             room.hostPlayerId !== resolvedPlayerId
         ) {
             socket.emit("errorMsg", "此房間為單人房間，無法加入");
+            return;
+        }
+
+        if (!room.players.length && action === "join") {
+            socket.emit("errorMsg", "房間尚未建立完成");
             return;
         }
 
