@@ -32,8 +32,8 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.get("/offline", (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "offline", "index.html"));
+app.get("/test", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "test", "index.html"));
 });
 
 // 另外增加一個專門的 health check API，有些平台會找這個
