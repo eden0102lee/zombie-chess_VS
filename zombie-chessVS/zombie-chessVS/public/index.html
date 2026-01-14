@@ -854,7 +854,7 @@
                 supply = data.supply;
                 currentPlayer = data.turn;
 
-                if (isComboMode && currentPlayer !== myPlayerNum) {
+                if (isComboMode && !canControlPlayer(currentPlayer)) {
                     isComboMode = false;
                     resetSelection();
                 }
