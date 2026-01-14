@@ -959,9 +959,13 @@
             const TRAINING_DATA_KEY = "zombie-chess-training-data";
             const TRAINING_MAX_ENTRIES = 2000;
             const TRAINING_PANEL_TOGGLE_TAPS = 5;
+            const TRAINING_AUTO_UPLOAD_KEY =
+                "zombie-chess-training-auto-upload";
             let gitTapCount = 0;
             let gitTapTimer = null;
             let disconnectCountdownTimer = null;
+            let trainingAutoUpload =
+                localStorage.getItem(TRAINING_AUTO_UPLOAD_KEY) !== "false";
             const playerId = (() => {
                 const existing = localStorage.getItem(PLAYER_ID_KEY);
                 if (existing) {
@@ -1212,6 +1216,10 @@
                     initGameData();
                     syncServer();
                 }
+                if (!trainingSessionId) {
+                    trainingSessionId = `session-${roomId}-${Date.now()}`;
+                }
+                enableTrainingRecording();
             },
             );
 
@@ -1221,6 +1229,7 @@
                 } else {
                     log("對手加入，開局");
                 }
+                enableTrainingRecording();
             });
             socket.on("playerAction", ({ message }) => {
                 log(message);
@@ -1302,6 +1311,9 @@
             let trainingEnabled =
                 localStorage.getItem(TRAINING_ENABLED_KEY) === "true";
             let trainingData = loadTrainingData();
+            let trainingUploadInProgress = false;
+            let trainingSessionId = null;
+            let trainingPendingDownload = false;
 
             updateTrainingUI();
 
@@ -1370,6 +1382,7 @@
                     "training-download-btn",
                 );
                 const clearBtn = document.getElementById("training-clear-btn");
+                const tipBtn = document.getElementById("training-tip-btn");
 
                 if (statusText) {
                     statusText.innerText = trainingEnabled
@@ -1389,6 +1402,11 @@
                 if (clearBtn) {
                     clearBtn.disabled = trainingData.length === 0;
                 }
+                if (tipBtn) {
+                    tipBtn.innerText = trainingAutoUpload
+                        ? "提示：自動回傳中"
+                        : "提示";
+                }
             }
 
             function toggleTraining() {
@@ -1402,8 +1420,60 @@
 
             function showTrainingTips() {
                 alert(
-                    "開啟後會記錄每次移動、復活與回合結束的棋盤狀態。\n建議用單人房練習，完成對局後下載 JSON 檔作為訓練資料。",
+                    "開啟後會記錄每次移動、復活與回合結束的棋盤狀態。\n預設會在對局結束時自動下載並回傳伺服器存檔。\n建議用單人房練習，完成對局後可取得 JSON 檔作為訓練資料。",
                 );
+            }
+
+            function enableTrainingRecording() {
+                if (trainingEnabled) return;
+                trainingEnabled = true;
+                localStorage.setItem(TRAINING_ENABLED_KEY, "true");
+                updateTrainingUI();
+            }
+
+            async function uploadTrainingData(reason = "manual") {
+                if (!trainingAutoUpload || !trainingData.length) {
+                    return false;
+                }
+                if (trainingUploadInProgress) {
+                    return false;
+                }
+                trainingUploadInProgress = true;
+                try {
+                    const response = await fetch("/api/training-upload", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            roomId: currentRoomId,
+                            reason,
+                            sessionId:
+                                trainingSessionId || `session-${Date.now()}`,
+                            data: trainingData,
+                        }),
+                    });
+                    if (!response.ok) {
+                        console.warn("訓練資料回傳失敗", response.status);
+                        return false;
+                    }
+                    return true;
+                } catch (error) {
+                    console.warn("訓練資料回傳失敗", error);
+                    return false;
+                } finally {
+                    trainingUploadInProgress = false;
+                }
+            }
+
+            async function finalizeTrainingSession(reason) {
+                if (!trainingEnabled || !trainingData.length) return;
+                if (trainingPendingDownload) return;
+                trainingPendingDownload = true;
+                downloadTrainingData();
+                const uploaded = await uploadTrainingData(reason);
+                if (uploaded) {
+                    clearTrainingData();
+                }
+                trainingPendingDownload = false;
             }
 
             function clearTrainingData() {
@@ -1432,9 +1502,14 @@
 
             function recordTrainingEvent(actionType, details, playerOverride) {
                 if (!trainingEnabled) return;
+                if (!trainingSessionId) {
+                    trainingSessionId =
+                        `session-${currentRoomId}-${Date.now()}`;
+                }
                 const snapshot = {
                     timestamp: new Date().toISOString(),
                     roomId: currentRoomId,
+                    sessionId: trainingSessionId,
                     player: playerOverride ?? currentPlayer,
                     action: actionType,
                     details,
@@ -1479,6 +1554,8 @@
                         div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
                         document.body.appendChild(div);
                     }, 100);
+                    recordTrainingEvent("gameEnd", { winner });
+                    void finalizeTrainingSession("game_end");
                 }
             }
 

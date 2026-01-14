@@ -3,6 +3,8 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { execSync } = require("child_process");
 const path = require("path");
+const fs = require("fs");
+const fsPromises = require("fs/promises");
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +27,7 @@ const gitVersion = (() => {
 })();
 
 // 提供靜態檔案 (HTML, CSS)
+app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ★★★ 關鍵修正 1：明確定義根目錄路由，回應健康檢查 ★★★
@@ -39,6 +42,36 @@ app.get("/health", (req, res) => {
 
 app.get("/version", (req, res) => {
     res.status(200).json({ version: gitVersion });
+});
+
+const TRAINING_DIR = path.join(__dirname, "training-uploads");
+
+const ensureTrainingDir = async () => {
+    if (!fs.existsSync(TRAINING_DIR)) {
+        await fsPromises.mkdir(TRAINING_DIR, { recursive: true });
+    }
+};
+
+const sanitizeRoomId = (roomId = "") =>
+    roomId.toString().replace(/[^a-zA-Z0-9_-]/g, "");
+
+app.post("/api/training-upload", async (req, res) => {
+    try {
+        const { roomId, data } = req.body || {};
+        if (!roomId || !Array.isArray(data) || data.length === 0) {
+            res.status(400).json({ error: "invalid_payload" });
+            return;
+        }
+        await ensureTrainingDir();
+        const safeRoomId = sanitizeRoomId(roomId) || "unknown";
+        const filename = `training-${safeRoomId}-${Date.now()}.json`;
+        const filepath = path.join(TRAINING_DIR, filename);
+        await fsPromises.writeFile(filepath, JSON.stringify(req.body, null, 2));
+        res.status(200).json({ ok: true, filename });
+    } catch (error) {
+        console.error("訓練資料上傳失敗:", error);
+        res.status(500).json({ error: "upload_failed" });
+    }
 });
 
 // 遊戲房間狀態
