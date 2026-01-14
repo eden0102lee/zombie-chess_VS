@@ -961,6 +961,7 @@
             const TRAINING_PANEL_TOGGLE_TAPS = 5;
             let gitTapCount = 0;
             let gitTapTimer = null;
+            let disconnectCountdownTimer = null;
             const playerId = (() => {
                 const existing = localStorage.getItem(PLAYER_ID_KEY);
                 if (existing) {
@@ -1231,10 +1232,42 @@
                 alert(msg);
                 document.getElementById("conn-status").innerText = msg;
             });
-            socket.on("playerDisconnected", () => {
-                alert("對手已斷線！");
-                location.reload();
-            });
+            socket.on(
+                "playerDisconnected",
+                ({ nickname, playerNum, countdownSeconds }) => {
+                    const displayName = nickname || `P${playerNum}`;
+                    const totalSeconds = Number.isFinite(countdownSeconds)
+                        ? countdownSeconds
+                        : 60;
+                    let remaining = totalSeconds;
+
+                    if (disconnectCountdownTimer) {
+                        clearInterval(disconnectCountdownTimer);
+                    }
+
+                    const updateMessage = () => {
+                        const message = `${displayName} 已斷線，${remaining} 秒後將清理房間。`;
+                        log(message);
+                        const turnDisplay =
+                            document.getElementById("turn-display");
+                        if (turnDisplay) {
+                            turnDisplay.innerText = message;
+                        }
+                    };
+
+                    updateMessage();
+
+                    disconnectCountdownTimer = setInterval(() => {
+                        remaining -= 1;
+                        if (remaining <= 0) {
+                            clearInterval(disconnectCountdownTimer);
+                            disconnectCountdownTimer = null;
+                            return;
+                        }
+                        updateMessage();
+                    }, 1000);
+                },
+            );
 
             requestRoomList();
 
@@ -1496,6 +1529,10 @@
                                 player.nickname?.trim() || "";
                         }
                     });
+                }
+                if (disconnectCountdownTimer) {
+                    clearInterval(disconnectCountdownTimer);
+                    disconnectCountdownTimer = null;
                 }
                 updatePlayerLabels();
                 updateRoleDisplay();
