@@ -582,9 +582,7 @@
         <div id="git-version">git: --</div>
         <div id="lobby-overlay">
             <div class="lobby-box">
-                <h1 style="color: #fff; margin-bottom: 10px">
-                    🧟 殭屍棋 Online
-                </h1>
+                <h1 style="color: #fff; margin-bottom: 10px">測試版</h1>
                 <p style="color: #ccc; margin-bottom: 30px">
                     輸入房間號碼與朋友對戰
                 </p>
@@ -616,11 +614,22 @@
                         />
                     </div>
                 </div>
-                <div style="margin-bottom: 12px; color: #cbd5f5">
-                    <label style="display: inline-flex; gap: 8px; align-items: center">
-                        <input type="checkbox" id="solo-mode" />
-                        建立單人房間（房主可操控紅藍兩色）
-                    </label>
+                <div class="lobby-fields" style="margin-bottom: 12px">
+                    <div class="lobby-row">
+                        <label for="mode-select">模式:</label>
+                        <select
+                            id="mode-select"
+                            class="lobby-input"
+                            style="max-width: 190px"
+                        >
+                            <option value="multi">線上對戰1V1</option>
+                            <option value="solo">單人模式</option>
+                            <option value="sim-bots">模擬對戰v.s.Bots</option>
+                            <option value="bots-vs-bots" disabled>
+                                電腦對戰Bots v.s. Bots（暫不開放）
+                            </option>
+                        </select>
+                    </div>
                 </div>
                 <br />
                 <button class="lobby-btn" onclick="joinGame('create')">
@@ -948,15 +957,32 @@
                 });
             }
 
+            const getModeLabel = (mode) => {
+                switch (mode) {
+                    case "multi":
+                        return "線上對戰1V1";
+                    case "solo":
+                        return "單人模式";
+                    case "sim-bots":
+                        return "模擬對戰v.s.Bots";
+                    case "bots-vs-bots":
+                        return "電腦對戰Bots v.s. Bots";
+                    default:
+                        return "對戰";
+                }
+            };
+
             function joinGame(action = "create") {
                 const room = document.getElementById("room-id").value;
                 if (!room) return alert("請輸入房間號碼");
-                const isSolo =
-                    document.getElementById("solo-mode")?.checked || false;
+                const mode = document.getElementById("mode-select")?.value;
+                if (mode === "bots-vs-bots") {
+                    return alert("電腦對戰模式暫不開放");
+                }
                 const nickname = nicknameInput?.value.trim() || "";
                 socket.emit("joinRoom", {
                     roomId: room,
-                    mode: isSolo ? "solo" : "multi",
+                    mode: mode || "multi",
                     playerId,
                     nickname,
                     action,
@@ -986,7 +1012,7 @@
 
                     const meta = document.createElement("div");
                     meta.className = "room-meta";
-                    const modeLabel = room.mode === "solo" ? "單人" : "對戰";
+                    const modeLabel = getModeLabel(room.mode);
                     meta.innerHTML = `<span>房間 ${room.roomId}</span><small>${modeLabel}｜玩家 ${room.players}/${room.maxPlayers}</small>`;
 
                     const btn = document.createElement("button");
@@ -1030,7 +1056,7 @@
 
                     const meta = document.createElement("div");
                     meta.className = "room-meta";
-                    const modeLabel = room.mode === "solo" ? "單人" : "對戰";
+                    const modeLabel = getModeLabel(room.mode);
                     meta.innerHTML = `<span>房間 ${room.roomId}</span><small>${modeLabel}｜玩家 ${room.players}/${room.maxPlayers}</small>`;
 
                     const btn = document.createElement("button");
