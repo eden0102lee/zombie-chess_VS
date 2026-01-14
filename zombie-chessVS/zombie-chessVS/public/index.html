@@ -558,6 +558,23 @@
                 color: #6b7280;
                 pointer-events: none;
             }
+            .log-player {
+                font-weight: bold;
+            }
+            .log-player.p1,
+            .turn-player.p1 {
+                color: var(--p1);
+            }
+            .log-player.p2,
+            .turn-player.p2 {
+                color: var(--p2);
+            }
+            .turn-display {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                justify-content: center;
+            }
         </style>
         <script src="/socket.io/socket.io.js"></script>
     </head>
@@ -668,8 +685,9 @@
                                 font-weight: bold;
                                 font-size: 12px;
                             "
+                            id="supply-label-p1"
                         >
-                            玩家 1 (紅)
+                            P1 (紅)
                         </div>
                         <div class="supply-row">
                             <button
@@ -701,8 +719,9 @@
                                 font-size: 12px;
                                 margin-top: 5px;
                             "
+                            id="supply-label-p2"
                         >
-                            玩家 2 (藍)
+                            P2 (藍)
                         </div>
                         <div class="supply-row">
                             <button
@@ -848,6 +867,7 @@
             const roomInput = document.getElementById("room-id");
             const playerIdDisplay = document.getElementById("player-id-display");
             const nicknameInput = document.getElementById("player-nickname");
+            const playerNicknames = { 1: "", 2: "" };
             const PLAYER_ID_KEY = "zombie-chess-player-id";
             const PLAYER_NICKNAME_KEY = "zombie-chess-player-nickname";
             const playerId = (() => {
@@ -911,10 +931,12 @@
                 if (!room) return alert("請輸入房間號碼");
                 const isSolo =
                     document.getElementById("solo-mode")?.checked || false;
+                const nickname = nicknameInput?.value.trim() || "";
                 socket.emit("joinRoom", {
                     roomId: room,
                     mode: isSolo ? "solo" : "multi",
                     playerId,
+                    nickname,
                 });
                 document.getElementById("conn-status").innerText = "連線中...";
             }
@@ -1039,9 +1061,8 @@
                         "單人模式：你可操作紅藍雙方";
                     log(`加入單人房 ${roomId}`);
                 } else {
-                    document.getElementById("role-display").innerText =
-                        `你是: 玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
-                    log(`加入房 ${roomId} / P${playerNum}`);
+                    updateRoleDisplay();
+                    log(`加入房 ${roomId} / ${formatPlayerShort(playerNum)}`);
                 }
                 if (playerNum === 1) {
                     initGameData();
@@ -1059,6 +1080,9 @@
             });
             socket.on("playerAction", ({ message }) => {
                 log(message);
+            });
+            socket.on("playerListUpdated", (players) => {
+                updatePlayerNicknames(players);
             });
             socket.on("errorMsg", (msg) => {
                 alert(msg);
@@ -1151,7 +1175,7 @@
                 if (winner) {
                     isGameOver = true;
                     setTimeout(() => {
-                        const msg = `🏆 玩家 ${winner} (${winner == 1 ? "紅" : "藍"}) 獲勝！`;
+                        const msg = `🏆 ${formatPlayerLabel(winner)} 獲勝！`;
                         const div = document.createElement("div");
                         div.className = "winner-overlay";
                         div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
@@ -1190,10 +1214,57 @@
                 return `(${r + 1}, ${c + 1})`;
             }
             function formatPlayerLabel(playerNum) {
-                return `玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
+                const nickname = playerNicknames[playerNum];
+                const base = `P${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
+                return nickname ? `${base} ${nickname}` : base;
             }
             function formatPlayerShort(playerNum) {
-                return `P${playerNum}${playerNum == 1 ? "紅" : "藍"}`;
+                return `<span class="log-player p${playerNum}">P${playerNum}</span>`;
+            }
+            function updatePlayerNicknames(players) {
+                playerNicknames[1] = "";
+                playerNicknames[2] = "";
+                if (Array.isArray(players)) {
+                    players.forEach((player) => {
+                        if (player?.num) {
+                            playerNicknames[player.num] =
+                                player.nickname?.trim() || "";
+                        }
+                    });
+                }
+                updatePlayerLabels();
+                updateRoleDisplay();
+                renderTurnDisplay();
+            }
+            function updatePlayerLabels() {
+                const label1 = document.getElementById("supply-label-p1");
+                const label2 = document.getElementById("supply-label-p2");
+                if (label1) label1.innerText = formatPlayerLabel(1);
+                if (label2) label2.innerText = formatPlayerLabel(2);
+            }
+            function updateRoleDisplay() {
+                if (roomMode !== "multi" || !myPlayerNum) return;
+                const roleDisplay = document.getElementById("role-display");
+                if (roleDisplay) {
+                    roleDisplay.innerText = `你是: ${formatPlayerLabel(
+                        myPlayerNum,
+                    )}`;
+                }
+            }
+            function renderTurnDisplay() {
+                const turnTxt = document.getElementById("turn-display");
+                if (!turnTxt) return;
+                turnTxt.classList.add("turn-display");
+                turnTxt.innerHTML = "";
+                const label = document.createElement("span");
+                label.innerText = "輪到:";
+                const playerSpan = document.createElement("span");
+                playerSpan.className = `turn-player p${currentPlayer}`;
+                playerSpan.innerText = `P${currentPlayer}`;
+                const nicknameSpan = document.createElement("span");
+                const nickname = playerNicknames[currentPlayer];
+                nicknameSpan.innerText = nickname ? ` ${nickname}` : "";
+                turnTxt.append(label, playerSpan, nicknameSpan);
             }
             function canControlPlayer(playerNum) {
                 return myPlayerNum === playerNum || isSoloHost;
@@ -1483,10 +1554,7 @@
 
                 document.getElementById("s1").innerText = scores[1];
                 document.getElementById("s2").innerText = scores[2];
-                let turnTxt = document.getElementById("turn-display");
-                turnTxt.innerText = `輪到: 玩家 ${currentPlayer} (${currentPlayer == 1 ? "紅" : "藍"})`;
-                turnTxt.style.color =
-                    currentPlayer == 1 ? "var(--p1)" : "var(--p2)";
+                renderTurnDisplay();
 
                 const boardCard = document.getElementById("board-card");
                 if (canControlPlayer(currentPlayer) && !isGameOver)
