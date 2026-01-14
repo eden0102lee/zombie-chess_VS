@@ -481,10 +481,25 @@
                 margin-bottom: 20px;
                 text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
             }
+            #git-version {
+                position: fixed;
+                top: 12px;
+                left: 12px;
+                padding: 6px 10px;
+                border-radius: 999px;
+                font-size: 12px;
+                letter-spacing: 0.5px;
+                background: rgba(15, 23, 42, 0.7);
+                border: 1px solid rgba(148, 163, 184, 0.4);
+                color: #e2e8f0;
+                z-index: 10001;
+                backdrop-filter: blur(6px);
+            }
         </style>
         <script src="/socket.io/socket.io.js"></script>
     </head>
     <body>
+        <div id="git-version">git: --</div>
         <div id="lobby-overlay">
             <div class="lobby-box">
                 <h1 style="color: #fff; margin-bottom: 10px">
@@ -740,6 +755,21 @@
             let isGameOver = false;
             let roomMode = "multi";
             let isSoloHost = false;
+            const gitVersionElement = document.getElementById("git-version");
+
+            fetch("/version")
+                .then((response) => response.json())
+                .then((data) => {
+                    const version = data?.version || "unknown";
+                    if (gitVersionElement) {
+                        gitVersionElement.innerText = `git: ${version}`;
+                    }
+                })
+                .catch(() => {
+                    if (gitVersionElement) {
+                        gitVersionElement.innerText = "git: unknown";
+                    }
+                });
 
             function joinGame() {
                 const room = document.getElementById("room-id").value;
