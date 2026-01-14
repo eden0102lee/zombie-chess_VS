@@ -488,14 +488,25 @@
                 background: rgba(0, 0, 0, 0.3);
                 padding: 10px;
                 border-radius: 8px;
-                font-size: 13px;
+                font-size: 12px;
+                line-height: 1.4;
+                font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
+                    monospace;
                 color: #ccc;
                 margin-top: 15px;
             }
             .log-line {
-                margin-bottom: 4px;
-                border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+                display: flex;
+                gap: 8px;
+                margin-bottom: 6px;
                 padding-bottom: 2px;
+            }
+            .log-time {
+                min-width: 48px;
+                color: #94a3b8;
+            }
+            .log-text {
+                color: #e2e8f0;
             }
 
             .my-turn {
@@ -1026,11 +1037,11 @@
                 if (roomMode === "solo") {
                     document.getElementById("role-display").innerText =
                         "單人模式：你可操作紅藍雙方";
-                    log(`加入單人房間 ${roomId}，你可操作雙方`);
+                    log(`加入單人房 ${roomId}`);
                 } else {
                     document.getElementById("role-display").innerText =
                         `你是: 玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
-                    log(`加入房間 ${roomId}，你是 P${playerNum}`);
+                    log(`加入房 ${roomId} / P${playerNum}`);
                 }
                 if (playerNum === 1) {
                     initGameData();
@@ -1041,9 +1052,9 @@
 
             socket.on("gameStart", () => {
                 if (roomMode === "solo") {
-                    log("單人模式開始！");
+                    log("單人模式開始");
                 } else {
-                    log("對手已加入，遊戲開始！");
+                    log("對手加入，開局");
                 }
             });
             socket.on("playerAction", ({ message }) => {
@@ -1160,7 +1171,12 @@
             }
             function log(msg) {
                 const el = document.getElementById("log");
-                el.innerHTML += `<div class="log-line">${msg}</div>`;
+                const now = new Date();
+                const time = now.toLocaleTimeString("zh-TW", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                });
+                el.innerHTML += `<div class="log-line"><span class="log-time">${time}</span><span class="log-text">${msg}</span></div>`;
                 el.scrollTop = el.scrollHeight;
             }
             function emitAction(message) {
@@ -1175,6 +1191,9 @@
             }
             function formatPlayerLabel(playerNum) {
                 return `玩家 ${playerNum} (${playerNum == 1 ? "紅" : "藍"})`;
+            }
+            function formatPlayerShort(playerNum) {
+                return `P${playerNum}${playerNum == 1 ? "紅" : "藍"}`;
             }
             function canControlPlayer(playerNum) {
                 return myPlayerNum === playerNum || isSoloHost;
@@ -1203,7 +1222,7 @@
                                 player: currentPlayer,
                             });
                             emitAction(
-                                `${formatPlayerLabel(currentPlayer)} 復活 ${t} 到 ${formatCell(r, c)}`,
+                                `${formatPlayerShort(currentPlayer)} 復活 ${t} → ${formatCell(r, c)}`,
                             );
                             resetSelection();
                             syncServer(); // 復活後自動結束回合 (這裡還是自動，因為復活不是連跳)
@@ -1344,11 +1363,11 @@
                     sc = selectedCell.c;
                 let mover = board[sr][sc];
                 let moverLabel = getStackLabel(mover);
-                let playerLabel = formatPlayerLabel(currentPlayer);
-                let actionBase = `${playerLabel} ${moverLabel} 從 ${formatCell(
+                let playerLabel = formatPlayerShort(currentPlayer);
+                let actionBase = `${playerLabel} ${moverLabel} ${formatCell(
                     sr,
                     sc,
-                )} `;
+                )}→`;
 
                 // 吃子
                 if (["jump", "sacrifice", "jump-stack"].includes(m.type)) {
@@ -1366,10 +1385,7 @@
                 if (m.type === "sacrifice") {
                     mover.forEach((p) => supply[p.player][p.type]++);
                     emitAction(
-                        `${actionBase}捨身跳躍到 ${formatCell(
-                            m.r,
-                            m.c,
-                        )}（得分 ${m.score}）`,
+                        `${actionBase}${formatCell(m.r, m.c)} 捨 +${m.score}`,
                     );
                     enterComboWaitState();
                     return;
@@ -1377,10 +1393,7 @@
                 if (m.type === "jump-stack") {
                     board[m.r][m.c].push(...mover);
                     emitAction(
-                        `${actionBase}跳躍疊到 ${formatCell(
-                            m.r,
-                            m.c,
-                        )}（得分 ${m.score}）`,
+                        `${actionBase}${formatCell(m.r, m.c)} 跳疊 +${m.score}`,
                     );
                     enterComboWaitState();
                     return;
@@ -1389,14 +1402,10 @@
                 // 移動/堆疊 (非跳躍)：直接結束
                 if (m.type === "stack") {
                     board[m.r][m.c].push(...mover);
-                    emitAction(
-                        `${actionBase}疊到 ${formatCell(m.r, m.c)}`,
-                    );
+                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 疊`);
                 } else if (m.type === "move") {
                     board[m.r][m.c] = mover;
-                    emitAction(
-                        `${actionBase}移動到 ${formatCell(m.r, m.c)}`,
-                    );
+                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 移`);
                 } else {
                     board[m.r][m.c] = mover;
                 }
@@ -1404,10 +1413,7 @@
                 // 連跳檢查
                 if (m.type === "jump") {
                     emitAction(
-                        `${actionBase}跳躍到 ${formatCell(
-                            m.r,
-                            m.c,
-                        )}（得分 ${m.score}）`,
+                        `${actionBase}${formatCell(m.r, m.c)} 跳 +${m.score}`,
                     );
                     let nextMoves = calcMoves(m.r, m.c).filter((nm) =>
                         ["jump", "sacrifice", "jump-stack"].includes(nm.type),
@@ -1456,7 +1462,7 @@
 
             function endTurn() {
                 if (!canControlPlayer(currentPlayer)) return;
-                emitAction(`${formatPlayerLabel(currentPlayer)} 結束回合`);
+                emitAction(`${formatPlayerShort(currentPlayer)} 回合結束`);
                 currentPlayer = currentPlayer === 1 ? 2 : 1;
                 isComboMode = false;
                 resetSelection();
