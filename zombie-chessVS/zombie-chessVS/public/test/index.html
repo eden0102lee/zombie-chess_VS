@@ -1129,6 +1129,13 @@
                     document.getElementById("role-display").innerText =
                         "單人模式：你可操作紅藍雙方";
                     log(`加入單人房 ${roomId}`);
+                } else if (roomMode === "sim-bots") {
+                    document.getElementById("role-display").innerText =
+                        "模擬對戰：你是 P1，P2 為 Bots";
+                    playerNicknames[2] = "Bots";
+                    updatePlayerLabels();
+                    renderTurnDisplay();
+                    log(`加入模擬對戰房 ${roomId}`);
                 } else {
                     updateRoleDisplay();
                     log(`加入房 ${roomId} / ${formatPlayerShort(playerNum)}`);
@@ -1143,6 +1150,8 @@
             socket.on("gameStart", () => {
                 if (roomMode === "solo") {
                     log("單人模式開始");
+                } else if (roomMode === "sim-bots") {
+                    log("模擬對戰開始，Bots 就位");
                 } else {
                     log("對手加入，開局");
                 }
@@ -1202,13 +1211,18 @@
                 supply = data.supply;
                 currentPlayer = data.turn;
 
-                if (isComboMode && !canControlPlayer(currentPlayer)) {
+                if (
+                    isComboMode &&
+                    !canControlPlayer(currentPlayer) &&
+                    !isAIPlayer(currentPlayer)
+                ) {
                     isComboMode = false;
                     resetSelection();
                 }
 
                 render();
                 checkWin();
+                scheduleAITurn();
             });
 
             // --- 遊戲邏輯 ---
@@ -1333,6 +1347,9 @@
                         }
                     });
                 }
+                if (roomMode === "sim-bots" && !playerNicknames[2]) {
+                    playerNicknames[2] = "Bots";
+                }
                 if (disconnectCountdownTimer) {
                     clearInterval(disconnectCountdownTimer);
                     disconnectCountdownTimer = null;
@@ -1372,7 +1389,195 @@
                 turnTxt.append(label, playerSpan, nicknameSpan);
             }
             function canControlPlayer(playerNum) {
-                return myPlayerNum === playerNum || isSoloHost;
+                if (roomMode === "solo") {
+                    return isSoloHost;
+                }
+                if (roomMode === "sim-bots") {
+                    return myPlayerNum === playerNum;
+                }
+                return myPlayerNum === playerNum;
+            }
+
+            // =========================
+            // AI 核心：啟發式貪婪演算法 (Heuristic Greedy)
+            // =========================
+
+            const AI_ENABLED = true;
+            const AI_PLAYER = 2;
+            let aiThinking = false;
+
+            function isAIPlayer(playerNum) {
+                return (
+                    AI_ENABLED &&
+                    roomMode === "sim-bots" &&
+                    isSoloHost &&
+                    playerNum === AI_PLAYER
+                );
+            }
+
+            class HeuristicAIAgent {
+                constructor() {
+                    this.ready = Promise.resolve(true);
+                }
+
+                getAllPossibleActions() {
+                    const actions = [];
+                    const p = currentPlayer;
+
+                    if (!isComboMode) {
+                        ["L", "M", "S"].forEach((type) => {
+                            if (supply[p][type] > 0) {
+                                for (let r = 0; r < SIZE; r++) {
+                                    for (let c = 0; c < SIZE; c++) {
+                                        if (
+                                            !isAfterlife(r, c) &&
+                                            board[r][c].length === 0
+                                        ) {
+                                            actions.push({
+                                                kind: "revive",
+                                                type,
+                                                r,
+                                                c,
+                                                score: 0,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    const candidates = [];
+                    if (isComboMode && selectedCell) {
+                        candidates.push(selectedCell);
+                    } else if (!isComboMode) {
+                        for (let r = 0; r < SIZE; r++) {
+                            for (let c = 0; c < SIZE; c++) {
+                                const stack = board[r][c];
+                                if (
+                                    stack.length > 0 &&
+                                    stack[0].player === p
+                                ) {
+                                    candidates.push({ r, c });
+                                }
+                            }
+                        }
+                    }
+
+                    candidates.forEach((pos) => {
+                        const moves = isComboMode
+                            ? validMoves
+                            : calcMoves(pos.r, pos.c);
+                        moves.forEach((m) => {
+                            actions.push({
+                                kind: "move",
+                                from: pos,
+                                to: { r: m.r, c: m.c },
+                                moveData: m,
+                                score: 0,
+                            });
+                        });
+                    });
+
+                    return actions;
+                }
+
+                evaluateAction(action) {
+                    let score = 0;
+
+                    if (action.kind === "revive") {
+                        const val = PIECE_VALS[action.type];
+                        score += val * 15;
+                        const distCenter =
+                            Math.abs(action.r - 3) +
+                            Math.abs(action.c - 3);
+                        score -= distCenter;
+                    } else if (action.kind === "move") {
+                        const m = action.moveData;
+                        if (
+                            ["jump", "sacrifice", "jump-stack"].includes(m.type)
+                        ) {
+                            score += m.score * 50;
+                            score += 100;
+                        }
+                        if (m.type === "stack") {
+                            score += 40;
+                        }
+                        if (m.type === "move") {
+                            score += 5;
+                            score += Math.random() * 5;
+                        }
+                    }
+
+                    return score;
+                }
+
+                async chooseAction() {
+                    const actions = this.getAllPossibleActions();
+                    if (actions.length === 0) return null;
+
+                    actions.forEach((action) => {
+                        action.finalScore = this.evaluateAction(action);
+                    });
+
+                    actions.sort((a, b) => b.finalScore - a.finalScore);
+                    const topK = Math.min(actions.length, 3);
+                    return actions[Math.floor(Math.random() * topK)];
+                }
+            }
+
+            const aiAgent = new HeuristicAIAgent();
+
+            function scheduleAITurn() {
+                if (!isAIPlayer(currentPlayer) || aiThinking || isGameOver) {
+                    return;
+                }
+                aiThinking = true;
+                setTimeout(async () => {
+                    await runAITurn();
+                    aiThinking = false;
+                }, 600);
+            }
+
+            async function runAITurn() {
+                if (isGameOver) return;
+
+                if (isComboMode && validMoves.length === 0) {
+                    endTurn();
+                    return;
+                }
+
+                const action = await aiAgent.chooseAction();
+
+                if (!action) {
+                    endTurn();
+                    return;
+                }
+
+                if (action.kind === "revive") {
+                    const { type, r, c } = action;
+                    supply[currentPlayer][type]--;
+                    board[r][c].push({
+                        type,
+                        val: PIECE_VALS[type],
+                        player: currentPlayer,
+                    });
+                    emitAction(
+                        `${formatPlayerShort(currentPlayer)} 復活 ${type} → ${formatCell(
+                            r,
+                            c,
+                        )}`,
+                    );
+                    reviveSelection = null;
+                    syncServer();
+                    endTurn();
+                    return;
+                }
+
+                if (action.kind === "move") {
+                    selectedCell = action.from;
+                    execute(action.moveData);
+                }
             }
 
             function handleCell(r, c) {
@@ -1600,6 +1805,7 @@
                         validMoves = nextMoves;
                         syncServer();
                         render();
+                        scheduleAITurn();
                         return;
                     }
                 }
@@ -1620,6 +1826,7 @@
                 isComboMode = true; // 保持這個狀態以顯示按鈕
                 syncServer();
                 render();
+                scheduleAITurn();
             }
 
             function selectSupply(p, type) {
@@ -1638,12 +1845,17 @@
             }
 
             function endTurn() {
-                if (!canControlPlayer(currentPlayer)) return;
+                if (
+                    !canControlPlayer(currentPlayer) &&
+                    !isAIPlayer(currentPlayer)
+                )
+                    return;
                 emitAction(`${formatPlayerShort(currentPlayer)} 回合結束`);
                 currentPlayer = currentPlayer === 1 ? 2 : 1;
                 isComboMode = false;
                 resetSelection();
                 syncServer();
+                scheduleAITurn();
             }
 
             function resetSelection() {
