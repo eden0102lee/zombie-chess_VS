@@ -1405,6 +1405,7 @@
             const AI_ENABLED = true;
             const AI_PLAYER = 2;
             let aiThinking = false;
+            let aiPendingTurn = false;
 
             function isAIPlayer(playerNum) {
                 return (
@@ -1529,13 +1530,21 @@
             const aiAgent = new HeuristicAIAgent();
 
             function scheduleAITurn() {
-                if (!isAIPlayer(currentPlayer) || aiThinking || isGameOver) {
+                if (!isAIPlayer(currentPlayer) || isGameOver) {
+                    return;
+                }
+                if (aiThinking) {
+                    aiPendingTurn = true;
                     return;
                 }
                 aiThinking = true;
                 setTimeout(async () => {
                     await runAITurn();
                     aiThinking = false;
+                    if (aiPendingTurn) {
+                        aiPendingTurn = false;
+                        scheduleAITurn();
+                    }
                 }, 600);
             }
 
