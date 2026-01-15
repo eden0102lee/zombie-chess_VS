@@ -863,6 +863,7 @@
             let myPlayerNum = 0;
             let currentRoomId = "";
             let isGameOver = false;
+            let winner = null;
             let roomMode = "multi";
             let isSoloHost = false;
             const gitVersionElement = document.getElementById("git-version");
@@ -1107,10 +1108,6 @@
                     updateRoleDisplay();
                     log(`加入房 ${roomId} / ${formatPlayerShort(playerNum)}`);
                 }
-                if (playerNum === 1) {
-                    initGameData();
-                    syncServer();
-                }
             },
             );
 
@@ -1175,6 +1172,12 @@
                 scores = data.scores;
                 supply = data.supply;
                 currentPlayer = data.turn;
+                selectedCell = data.selectedCell;
+                validMoves = data.validMoves || [];
+                isComboMode = data.isComboMode;
+                reviveSelection = data.reviveSelection;
+                isGameOver = data.isGameOver;
+                winner = data.winner;
 
                 if (isComboMode && !canControlPlayer(currentPlayer)) {
                     isComboMode = false;
@@ -1187,9 +1190,6 @@
 
             // --- 遊戲邏輯 ---
             const SIZE = 7;
-            const PIECE_VALS = { L: 3, M: 2, S: 1 };
-            const MAX_PIECES = { L: 1, M: 4, S: 5 };
-
             let board = [];
             let scores = { 1: 0, 2: 0 };
             let supply = { 1: {}, 2: {} };
@@ -1199,71 +1199,20 @@
             let validMoves = [];
             let isComboMode = false;
 
-            function initGameData() {
-                scores = { 1: 0, 2: 0 };
-                currentPlayer = 1;
-                isGameOver = false;
-                board = Array.from({ length: SIZE }, () =>
-                    Array.from({ length: SIZE }, () => []),
-                );
-                const layout = [
-                    { r: 1, row: [2, 0, 3, 0, 2], p: 2 },
-                    { r: 2, row: [1, 1, 1, 1, 1], p: 2 },
-                    { r: 4, row: [1, 1, 1, 1, 1], p: 1 },
-                    { r: 5, row: [2, 0, 3, 0, 2], p: 1 },
-                ];
-                let used = { 1: { L: 0, M: 0, S: 0 }, 2: { L: 0, M: 0, S: 0 } };
-                layout.forEach((cfg) => {
-                    cfg.row.forEach((val, cIdx) => {
-                        if (val > 0) {
-                            let type = val === 3 ? "L" : val === 2 ? "M" : "S";
-                            board[cfg.r][cIdx + 1].push({
-                                type,
-                                val,
-                                player: cfg.p,
-                            });
-                            used[cfg.p][type]++;
-                        }
-                    });
-                });
-                [1, 2].forEach((p) => {
-                    for (let k in MAX_PIECES)
-                        supply[p][k] = MAX_PIECES[k] - used[p][k];
-                });
-                render();
-            }
-
-            function syncServer() {
-                socket.emit("updateGame", {
-                    roomId: currentRoomId,
-                    newState: { board, scores, supply, turn: currentPlayer },
-                });
-            }
-
             function checkWin() {
-                if (isGameOver) return;
-
-                let winner = null;
-                if (scores[1] >= 8) winner = 1;
-                else if (scores[2] >= 8) winner = 2;
-
-                if (winner) {
-                    isGameOver = true;
-                    setTimeout(() => {
-                        const msg = `🏆 ${formatPlayerLabel(winner)} 獲勝！`;
-                        const div = document.createElement("div");
-                        div.className = "winner-overlay";
-                        div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
-                        document.body.appendChild(div);
-                    }, 100);
-                }
+                if (!isGameOver || !winner) return;
+                if (document.querySelector(".winner-overlay")) return;
+                setTimeout(() => {
+                    const msg = `🏆 ${formatPlayerLabel(winner)} 獲勝！`;
+                    const div = document.createElement("div");
+                    div.className = "winner-overlay";
+                    div.innerHTML = `<div class="winner-text">${msg}</div><button class="lobby-btn" onclick="location.reload()">重新整理再來一局</button>`;
+                    document.body.appendChild(div);
+                }, 100);
             }
 
             function isAfterlife(r, c) {
-                return r === 0 || r === 6 || c === 0 || c === 6;
-            }
-            function getStackVal(stack) {
-                return stack.reduce((a, b) => a + b.val, 0);
+                return r === 0 || r === SIZE - 1 || c === 0 || c === SIZE - 1;
             }
             function getStackLabel(stack) {
                 return stack.map((p) => p.type).join("");
@@ -1277,13 +1226,6 @@
                 });
                 el.innerHTML += `<div class="log-line"><span class="log-time">${time}</span><span class="log-text">${msg}</span></div>`;
                 el.scrollTop = el.scrollHeight;
-            }
-            function emitAction(message) {
-                if (!currentRoomId) return;
-                socket.emit("playerAction", {
-                    roomId: currentRoomId,
-                    message,
-                });
             }
             function formatCell(r, c) {
                 return `(${r + 1}, ${c + 1})`;
@@ -1353,247 +1295,34 @@
                 if (isGameOver) return;
                 if (!canControlPlayer(currentPlayer)) return;
 
-                if (isComboMode) {
-                    let m = validMoves.find((x) => x.r === r && x.c === c);
-                    if (m) execute(m);
-                    else if (r === selectedCell.r && c === selectedCell.c) {
-                    } else alert("連跳中：請選擇目標或結束連跳");
-                    return;
-                }
-
                 if (reviveSelection) {
-                    if (!isAfterlife(r, c) && board[r][c].length === 0) {
-                        let t = reviveSelection;
-                        if (supply[currentPlayer][t] > 0) {
-                            supply[currentPlayer][t]--;
-                            board[r][c].push({
-                                type: t,
-                                val: PIECE_VALS[t],
-                                player: currentPlayer,
-                            });
-                            emitAction(
-                                `${formatPlayerShort(currentPlayer)} 復活 ${t} → ${formatCell(r, c)}`,
-                            );
-                            resetSelection();
-                            syncServer(); // 復活後自動結束回合 (這裡還是自動，因為復活不是連跳)
-                            endTurn();
-                        }
-                    } else resetSelection();
-                    return;
-                }
-
-                let stack = board[r][c];
-                if (stack.length > 0 && stack[0].player === currentPlayer) {
-                    if (
-                        selectedCell &&
-                        selectedCell.r === r &&
-                        selectedCell.c === c
-                    )
-                        resetSelection();
-                    else {
-                        selectedCell = { r, c };
-                        validMoves = calcMoves(r, c);
-                        render();
-                    }
-                    return;
-                }
-
-                if (selectedCell) {
-                    let m = validMoves.find(
-                        (x) =>
-                            x.r === r &&
-                            x.c === c &&
-                            !["stack", "jump-stack"].includes(x.type),
-                    );
-                    if (m) execute(m);
-                    else resetSelection();
-                }
-            }
-
-            function calcMoves(r, c) {
-                let moves = [];
-                let stack = board[r][c];
-                if (stack.length === 0) return [];
-                let myVal = getStackVal(stack);
-                let myBottomVal = stack[0].val;
-                const dirs = [
-                    [-1, 0],
-                    [1, 0],
-                    [0, -1],
-                    [0, 1],
-                ];
-
-                dirs.forEach(([dr, dc]) => {
-                    if (!isComboMode) {
-                        let nr = r + dr,
-                            nc = c + dc;
-                        if (
-                            nr >= 0 &&
-                            nr < SIZE &&
-                            nc >= 0 &&
-                            nc < SIZE &&
-                            !isAfterlife(nr, nc)
-                        ) {
-                            let target = board[nr][nc];
-                            if (target.length === 0)
-                                moves.push({ r: nr, c: nc, type: "move" });
-                            else if (
-                                target[0].player === currentPlayer &&
-                                myBottomVal < target[target.length - 1].val
-                            ) {
-                                moves.push({ r: nr, c: nc, type: "stack" });
-                            }
-                        }
-                    }
-
-                    let jr = r + dr,
-                        jc = c + dc;
-                    let enemyScore = 0; // 只計算分數的敵方總和
-                    let jumpedVal = 0; // 修正：計算路徑上「所有」棋子的總和（敵+我）
-                    let victims = [];
-
-                    while (jr >= 0 && jr < SIZE && jc >= 0 && jc < SIZE) {
-                        let tStack = board[jr][jc];
-
-                        if (tStack.length === 0) {
-                            // 跳躍判定：距離>1 且 我方數值 >= 路徑上所有棋子總和
-                            if (
-                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
-                                myVal >= jumpedVal
-                            ) {
-                                let isSacrifice = isAfterlife(jr, jc);
-                                moves.push({
-                                    r: jr,
-                                    c: jc,
-                                    type: isSacrifice ? "sacrifice" : "jump",
-                                    score: enemyScore,
-                                    victims: [...victims],
-                                });
-                            }
-                            break;
-                        }
-
-                        // 累計路徑阻力 (敵+我)
-                        let cellVal = getStackVal(tStack);
-
-                        // 如果遇到己方，先檢查是否可上疊 (Landing on friend)
-                        if (tStack[0].player === currentPlayer) {
-                            if (
-                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
-                                myVal >= jumpedVal &&
-                                myBottomVal < tStack[tStack.length - 1].val
-                            ) {
-                                moves.push({
-                                    r: jr,
-                                    c: jc,
-                                    type: "jump-stack",
-                                    score: enemyScore,
-                                    victims: [...victims],
-                                });
-                            }
-                        }
-
-                        // 將此格加入「已越過的阻力」
-                        jumpedVal += cellVal;
-
-                        if (tStack[0].player !== currentPlayer) {
-                            enemyScore += cellVal;
-                            victims.push({ r: jr, c: jc });
-                        }
-
-                        jr += dr;
-                        jc += dc;
-                    }
-                });
-                return moves;
-            }
-
-            function execute(m) {
-                let sr = selectedCell.r,
-                    sc = selectedCell.c;
-                let mover = board[sr][sc];
-                let moverLabel = getStackLabel(mover);
-                let playerLabel = formatPlayerShort(currentPlayer);
-                let actionBase = `${playerLabel} ${moverLabel} ${formatCell(
-                    sr,
-                    sc,
-                )}→`;
-
-                // 吃子
-                if (["jump", "sacrifice", "jump-stack"].includes(m.type)) {
-                    m.victims.forEach((v) => {
-                        board[v.r][v.c].forEach(
-                            (p) => supply[p.player][p.type]++,
-                        );
-                        board[v.r][v.c] = [];
+                    socket.emit("gameAction", {
+                        roomId: currentRoomId,
+                        action: { type: "revivePlace", r, c },
                     });
-                    scores[currentPlayer] += m.score;
-                }
-                board[sr][sc] = [];
-
-                // 捨身與上疊：強制結束，但改為等待玩家手動按按鈕
-                if (m.type === "sacrifice") {
-                    mover.forEach((p) => supply[p.player][p.type]++);
-                    emitAction(
-                        `${actionBase}${formatCell(m.r, m.c)} 捨身 +${m.score}`,
-                    );
-                    enterComboWaitState();
-                    return;
-                }
-                if (m.type === "jump-stack") {
-                    board[m.r][m.c].push(...mover);
-                    emitAction(
-                        `${actionBase}${formatCell(m.r, m.c)} 跳疊 +${m.score}`,
-                    );
-                    enterComboWaitState();
                     return;
                 }
 
-                // 移動/堆疊 (非跳躍)：直接結束
-                if (m.type === "stack") {
-                    board[m.r][m.c].push(...mover);
-                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 堆疊`);
-                } else if (m.type === "move") {
-                    board[m.r][m.c] = mover;
-                    emitAction(`${actionBase}${formatCell(m.r, m.c)} 移動`);
-                } else {
-                    board[m.r][m.c] = mover;
+                const move = validMoves.find((m) => m.r === r && m.c === c);
+                if (move) {
+                    socket.emit("gameAction", {
+                        roomId: currentRoomId,
+                        action: { type: "performMove", r, c },
+                    });
+                    return;
                 }
 
-                // 連跳檢查
-                if (m.type === "jump") {
-                    emitAction(
-                        `${actionBase}${formatCell(m.r, m.c)} 跳 +${m.score}`,
-                    );
-                    let nextMoves = calcMoves(m.r, m.c).filter((nm) =>
-                        ["jump", "sacrifice", "jump-stack"].includes(nm.type),
-                    );
-                    if (nextMoves.length > 0) {
-                        isComboMode = true;
-                        selectedCell = { r: m.r, c: m.c };
-                        validMoves = nextMoves;
-                        syncServer();
-                        render();
-                        return;
-                    }
+                const stack = board[r][c];
+                if (
+                    stack.length > 0 &&
+                    stack[0].player === currentPlayer &&
+                    !isComboMode
+                ) {
+                    socket.emit("gameAction", {
+                        roomId: currentRoomId,
+                        action: { type: "selectCell", r, c },
+                    });
                 }
-
-                // 若無下一步，進入「等待結束」狀態，而非自動結束
-                // 這是為了滿足「所有跳躍操控改為手動結束」的需求
-                //if (m.type === "jump") {
-                //    enterComboWaitState();
-                //} else {
-                //    endTurn(); // 普通移動還是自動結束比較順暢
-                //}
-                endTurn();
-            }
-
-            function enterComboWaitState() {
-                selectedCell = null;
-                validMoves = [];
-                isComboMode = true; // 保持這個狀態以顯示按鈕
-                syncServer();
-                render();
             }
 
             function selectSupply(p, type) {
@@ -1605,19 +1334,18 @@
                 )
                     return;
                 if (supply[p][type] <= 0) return;
-                reviveSelection = type;
-                selectedCell = null;
-                validMoves = [];
-                render();
+                socket.emit("gameAction", {
+                    roomId: currentRoomId,
+                    action: { type: "reviveSelect", pieceType: type },
+                });
             }
 
             function endTurn() {
                 if (!canControlPlayer(currentPlayer)) return;
-                emitAction(`${formatPlayerShort(currentPlayer)} 回合結束`);
-                currentPlayer = currentPlayer === 1 ? 2 : 1;
-                isComboMode = false;
-                resetSelection();
-                syncServer();
+                socket.emit("gameAction", {
+                    roomId: currentRoomId,
+                    action: { type: "endTurn" },
+                });
             }
 
             function resetSelection() {
@@ -1726,7 +1454,14 @@
                                 }
                                 dot.onclick = (e) => {
                                     e.stopPropagation();
-                                    execute(move);
+                                    socket.emit("gameAction", {
+                                        roomId: currentRoomId,
+                                        action: {
+                                            type: "performMove",
+                                            r: move.r,
+                                            c: move.c,
+                                        },
+                                    });
                                 };
                                 div.appendChild(dot);
                             } else {
