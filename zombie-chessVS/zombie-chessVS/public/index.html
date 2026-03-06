@@ -915,6 +915,14 @@
                 });
             }
 
+            (function applyEntryModePreset() {
+                const params = new URLSearchParams(window.location.search);
+                const mode = params.get("mode");
+                const soloCheckbox = document.getElementById("solo-mode");
+                if (!soloCheckbox) return;
+                soloCheckbox.checked = mode === "solo";
+            })();
+
             fetch("/version")
                 .then((response) => response.json())
                 .then((data) => {

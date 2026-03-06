@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>殭屍棋 - 遊戲入口</title>
+        <style>
+            :root {
+                --bg0: #0b1220;
+                --bg1: #1e293b;
+                --card: rgba(15, 23, 42, 0.7);
+                --line: rgba(148, 163, 184, 0.35);
+                --text: #e2e8f0;
+                --muted: #94a3b8;
+                --primary: #fbbf24;
+                --online: #38bdf8;
+                --offline: #a78bfa;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                color: var(--text);
+                font-family: "Microsoft JhengHei", system-ui, sans-serif;
+                background: radial-gradient(circle at top, var(--bg1), var(--bg0));
+                display: grid;
+                place-items: center;
+                padding: 20px;
+            }
+            .wrap {
+                width: 100%;
+                max-width: 980px;
+                display: grid;
+                gap: 18px;
+            }
+            .hero {
+                background: var(--card);
+                border: 1px solid var(--line);
+                border-radius: 18px;
+                padding: 24px;
+                text-align: center;
+            }
+            .hero h1 {
+                margin: 0;
+                font-size: 34px;
+            }
+            .hero p {
+                margin: 8px 0 0;
+                color: var(--muted);
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 18px;
+            }
+            @media (max-width: 840px) {
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .card {
+                background: var(--card);
+                border: 1px solid var(--line);
+                border-radius: 18px;
+                padding: 20px;
+                display: grid;
+                gap: 14px;
+            }
+            .card h2 {
+                margin: 0;
+                font-size: 22px;
+            }
+            .card p {
+                margin: 0;
+                color: var(--muted);
+                font-size: 14px;
+                line-height: 1.6;
+            }
+            .option-group {
+                display: grid;
+                gap: 10px;
+            }
+            .option {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 10px 12px;
+            }
+            .option strong {
+                display: block;
+                margin-bottom: 2px;
+            }
+            .option span {
+                color: var(--muted);
+                font-size: 13px;
+            }
+            .btn {
+                border: none;
+                border-radius: 12px;
+                padding: 12px 14px;
+                font-size: 16px;
+                font-weight: 700;
+                color: #0f172a;
+                cursor: pointer;
+            }
+            .btn-online {
+                background: linear-gradient(90deg, var(--online), #7dd3fc);
+            }
+            .btn-offline {
+                background: linear-gradient(90deg, var(--offline), #c4b5fd);
+            }
+        </style>
+    </head>
+    <body>
+        <main class="wrap">
+            <section class="hero">
+                <h1>🧟 殭屍棋</h1>
+                <p>請先選擇遊戲類型與模式，再進入遊戲。</p>
+            </section>
+
+            <section class="grid">
+                <article class="card">
+                    <h2>線上對戰（Online）</h2>
+                    <p>與朋友同房間對戰，或建立單人房自行操作雙方。</p>
+                    <div class="option-group">
+                        <label class="option">
+                            <input
+                                type="radio"
+                                name="online-mode"
+                                value="multi"
+                                checked
+                            />
+                            <div>
+                                <strong>多人對戰模式</strong>
+                                <span>建立房間並讓其他玩家加入。</span>
+                            </div>
+                        </label>
+                        <label class="option">
+                            <input type="radio" name="online-mode" value="solo" />
+                            <div>
+                                <strong>單人房模式</strong>
+                                <span>由房主操作紅藍雙方，方便練習規則。</span>
+                            </div>
+                        </label>
+                    </div>
+                    <button class="btn btn-online" id="go-online">進入線上版</button>
+                </article>
+
+                <article class="card">
+                    <h2>離線工作區（Offline）</h2>
+                    <p>本地 AI 測試與訓練用，不影響線上穩定版本。</p>
+                    <div class="option-group">
+                        <label class="option">
+                            <input
+                                type="radio"
+                                name="offline-mode"
+                                value="pve"
+                                checked
+                            />
+                            <div>
+                                <strong>玩家 VS 電腦</strong>
+                                <span>調整難度，測試遊玩節奏。</span>
+                            </div>
+                        </label>
+                        <label class="option">
+                            <input type="radio" name="offline-mode" value="evs" />
+                            <div>
+                                <strong>電腦 VS 電腦</strong>
+                                <span>快速觀察策略對戰結果。</span>
+                            </div>
+                        </label>
+                        <label class="option">
+                            <input
+                                type="radio"
+                                name="offline-mode"
+                                value="training"
+                            />
+                            <div>
+                                <strong>AI 訓練流程</strong>
+                                <span>整理資料與訓練管線。</span>
+                            </div>
+                        </label>
+                    </div>
+                    <button class="btn btn-offline" id="go-offline">進入離線版</button>
+                </article>
+            </section>
+        </main>
+
+        <script>
+            const onlineBtn = document.getElementById("go-online");
+            const offlineBtn = document.getElementById("go-offline");
+
+            const getSelectedValue = (name) => {
+                const checked = document.querySelector(`input[name="${name}"]:checked`);
+                return checked?.value || "";
+            };
+
+            onlineBtn?.addEventListener("click", () => {
+                const mode = getSelectedValue("online-mode") || "multi";
+                window.location.href = `/online?mode=${encodeURIComponent(mode)}`;
+            });
+
+            offlineBtn?.addEventListener("click", () => {
+                const mode = getSelectedValue("offline-mode") || "pve";
+                window.location.href = `/offline?mode=${encodeURIComponent(mode)}`;
+            });
+        </script>
+    </body>
+</html>

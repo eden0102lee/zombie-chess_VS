@@ -29,6 +29,10 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ★★★ 關鍵修正 1：明確定義根目錄路由，回應健康檢查 ★★★
 app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "portal.html"));
+});
+
+app.get("/online", (req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 

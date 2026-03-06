@@ -74,4 +74,8 @@ modeCards.forEach((card) => {
     }
 });
 
-setActiveMode("pve");
+const params = new URLSearchParams(window.location.search);
+const presetMode = params.get("mode");
+const initialMode = modeContent[presetMode] ? presetMode : "pve";
+
+setActiveMode(initialMode);
