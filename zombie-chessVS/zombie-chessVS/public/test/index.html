@@ -1416,113 +1416,421 @@
                 );
             }
 
+            function clonePiece(piece) {
+                return {
+                    type: piece.type,
+                    val: piece.val,
+                    player: piece.player,
+                };
+            }
+
+            function cloneBoardState(srcBoard) {
+                return srcBoard.map((row) =>
+                    row.map((stack) => stack.map((piece) => clonePiece(piece))),
+                );
+            }
+
+            function cloneSupplyState(srcSupply) {
+                return {
+                    1: {
+                        L: srcSupply[1].L,
+                        M: srcSupply[1].M,
+                        S: srcSupply[1].S,
+                    },
+                    2: {
+                        L: srcSupply[2].L,
+                        M: srcSupply[2].M,
+                        S: srcSupply[2].S,
+                    },
+                };
+            }
+
+            function cloneMoveData(move) {
+                return {
+                    ...move,
+                    victims: Array.isArray(move.victims)
+                        ? move.victims.map((v) => ({ r: v.r, c: v.c }))
+                        : [],
+                };
+            }
+
+            function cloneGameState(state) {
+                return {
+                    board: cloneBoardState(state.board),
+                    scores: { 1: state.scores[1], 2: state.scores[2] },
+                    supply: cloneSupplyState(state.supply),
+                    turn: state.turn,
+                    isComboMode: !!state.isComboMode,
+                    selectedCell: state.selectedCell
+                        ? { r: state.selectedCell.r, c: state.selectedCell.c }
+                        : null,
+                    validMoves: (state.validMoves || []).map((m) =>
+                        cloneMoveData(m),
+                    ),
+                };
+            }
+
+            function snapshotCurrentState() {
+                return cloneGameState({
+                    board,
+                    scores,
+                    supply,
+                    turn: currentPlayer,
+                    isComboMode,
+                    selectedCell,
+                    validMoves,
+                });
+            }
+
+            function getStackValue(stack) {
+                return stack.reduce((sum, piece) => sum + piece.val, 0);
+            }
+
+            function calcMovesForState(state, r, c) {
+                const moves = [];
+                const stack = state.board[r][c];
+                if (!stack.length) return moves;
+
+                const myVal = getStackValue(stack);
+                const myBottomVal = stack[0].val;
+                const p = state.turn;
+                const dirs = [
+                    [-1, 0],
+                    [1, 0],
+                    [0, -1],
+                    [0, 1],
+                ];
+
+                dirs.forEach(([dr, dc]) => {
+                    if (!state.isComboMode) {
+                        const nr = r + dr;
+                        const nc = c + dc;
+                        if (
+                            nr >= 0 &&
+                            nr < SIZE &&
+                            nc >= 0 &&
+                            nc < SIZE &&
+                            !isAfterlife(nr, nc)
+                        ) {
+                            const target = state.board[nr][nc];
+                            if (!target.length) {
+                                moves.push({ r: nr, c: nc, type: "move" });
+                            } else if (
+                                target[0].player === p &&
+                                myBottomVal < target[target.length - 1].val
+                            ) {
+                                moves.push({ r: nr, c: nc, type: "stack" });
+                            }
+                        }
+                    }
+
+                    let jr = r + dr;
+                    let jc = c + dc;
+                    let enemyScore = 0;
+                    let jumpedVal = 0;
+                    const victims = [];
+
+                    while (jr >= 0 && jr < SIZE && jc >= 0 && jc < SIZE) {
+                        const tStack = state.board[jr][jc];
+                        if (!tStack.length) {
+                            if (
+                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
+                                myVal >= jumpedVal
+                            ) {
+                                moves.push({
+                                    r: jr,
+                                    c: jc,
+                                    type: isAfterlife(jr, jc)
+                                        ? "sacrifice"
+                                        : "jump",
+                                    score: enemyScore,
+                                    victims: victims.map((v) => ({ ...v })),
+                                });
+                            }
+                            break;
+                        }
+
+                        const cellVal = getStackValue(tStack);
+                        if (tStack[0].player === p) {
+                            if (
+                                Math.abs(jr - r) + Math.abs(jc - c) > 1 &&
+                                myVal >= jumpedVal &&
+                                myBottomVal < tStack[tStack.length - 1].val
+                            ) {
+                                moves.push({
+                                    r: jr,
+                                    c: jc,
+                                    type: "jump-stack",
+                                    score: enemyScore,
+                                    victims: victims.map((v) => ({ ...v })),
+                                });
+                            }
+                        }
+
+                        jumpedVal += cellVal;
+                        if (tStack[0].player !== p) {
+                            enemyScore += cellVal;
+                            victims.push({ r: jr, c: jc });
+                        }
+
+                        jr += dr;
+                        jc += dc;
+                    }
+                });
+
+                return moves;
+            }
+
+            function getActionsForState(state) {
+                const actions = [];
+                const p = state.turn;
+
+                if (!state.isComboMode) {
+                    ["L", "M", "S"].forEach((type) => {
+                        if (state.supply[p][type] > 0) {
+                            for (let r = 0; r < SIZE; r++) {
+                                for (let c = 0; c < SIZE; c++) {
+                                    if (
+                                        !isAfterlife(r, c) &&
+                                        state.board[r][c].length === 0
+                                    ) {
+                                        actions.push({ kind: "revive", type, r, c });
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                const candidates = [];
+                if (state.isComboMode && state.selectedCell) {
+                    candidates.push(state.selectedCell);
+                } else if (!state.isComboMode) {
+                    for (let r = 0; r < SIZE; r++) {
+                        for (let c = 0; c < SIZE; c++) {
+                            const stack = state.board[r][c];
+                            if (stack.length && stack[0].player === p) {
+                                candidates.push({ r, c });
+                            }
+                        }
+                    }
+                }
+
+                candidates.forEach((from) => {
+                    const moves = state.isComboMode
+                        ? state.validMoves
+                        : calcMovesForState(state, from.r, from.c);
+                    moves.forEach((moveData) => {
+                        actions.push({
+                            kind: "move",
+                            from: { r: from.r, c: from.c },
+                            to: { r: moveData.r, c: moveData.c },
+                            moveData: cloneMoveData(moveData),
+                        });
+                    });
+                });
+
+                return actions;
+            }
+
+            function applyActionToState(baseState, action) {
+                const state = cloneGameState(baseState);
+                const p = state.turn;
+                const enemy = p === 1 ? 2 : 1;
+
+                const endTurn = () => {
+                    state.turn = enemy;
+                    state.isComboMode = false;
+                    state.selectedCell = null;
+                    state.validMoves = [];
+                };
+
+                if (action.kind === "revive") {
+                    const { type, r, c } = action;
+                    if (
+                        state.supply[p][type] > 0 &&
+                        !isAfterlife(r, c) &&
+                        state.board[r][c].length === 0
+                    ) {
+                        state.supply[p][type] -= 1;
+                        state.board[r][c].push({
+                            type,
+                            val: PIECE_VALS[type],
+                            player: p,
+                        });
+                        endTurn();
+                    }
+                    return state;
+                }
+
+                if (action.kind !== "move") return state;
+
+                const move = action.moveData;
+                const sr = action.from.r;
+                const sc = action.from.c;
+                const mover = state.board[sr][sc].map((piece) => clonePiece(piece));
+                if (!mover.length) return state;
+
+                if (["jump", "sacrifice", "jump-stack"].includes(move.type)) {
+                    (move.victims || []).forEach((v) => {
+                        const victimStack = state.board[v.r][v.c];
+                        victimStack.forEach((piece) => {
+                            state.supply[piece.player][piece.type] += 1;
+                        });
+                        state.board[v.r][v.c] = [];
+                    });
+                    state.scores[p] += move.score || 0;
+                }
+
+                state.board[sr][sc] = [];
+
+                if (move.type === "sacrifice") {
+                    mover.forEach((piece) => {
+                        state.supply[piece.player][piece.type] += 1;
+                    });
+                    endTurn();
+                    return state;
+                }
+
+                if (move.type === "jump-stack") {
+                    state.board[move.r][move.c].push(...mover);
+                    endTurn();
+                    return state;
+                }
+
+                if (move.type === "stack") {
+                    state.board[move.r][move.c].push(...mover);
+                    endTurn();
+                    return state;
+                }
+
+                state.board[move.r][move.c] = mover;
+
+                if (move.type === "jump") {
+                    const nextMoves = calcMovesForState(state, move.r, move.c).filter(
+                        (nm) =>
+                            nm.type === "jump" ||
+                            nm.type === "sacrifice" ||
+                            nm.type === "jump-stack",
+                    );
+                    if (nextMoves.length > 0) {
+                        state.isComboMode = true;
+                        state.selectedCell = { r: move.r, c: move.c };
+                        state.validMoves = nextMoves.map((nm) => cloneMoveData(nm));
+                        return state;
+                    }
+                }
+
+                endTurn();
+                return state;
+            }
+
             class HeuristicAIAgent {
                 constructor() {
                     this.ready = Promise.resolve(true);
                 }
 
-                getAllPossibleActions() {
-                    const actions = [];
-                    const p = currentPlayer;
-
-                    if (!isComboMode) {
-                        ["L", "M", "S"].forEach((type) => {
-                            if (supply[p][type] > 0) {
-                                for (let r = 0; r < SIZE; r++) {
-                                    for (let c = 0; c < SIZE; c++) {
-                                        if (
-                                            !isAfterlife(r, c) &&
-                                            board[r][c].length === 0
-                                        ) {
-                                            actions.push({
-                                                kind: "revive",
-                                                type,
-                                                r,
-                                                c,
-                                                score: 0,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-
-                    const candidates = [];
-                    if (isComboMode && selectedCell) {
-                        candidates.push(selectedCell);
-                    } else if (!isComboMode) {
-                        for (let r = 0; r < SIZE; r++) {
-                            for (let c = 0; c < SIZE; c++) {
-                                const stack = board[r][c];
-                                if (
-                                    stack.length > 0 &&
-                                    stack[0].player === p
-                                ) {
-                                    candidates.push({ r, c });
-                                }
-                            }
-                        }
-                    }
-
-                    candidates.forEach((pos) => {
-                        const moves = isComboMode
-                            ? validMoves
-                            : calcMoves(pos.r, pos.c);
-                        moves.forEach((m) => {
-                            actions.push({
-                                kind: "move",
-                                from: pos,
-                                to: { r: m.r, c: m.c },
-                                moveData: m,
-                                score: 0,
-                            });
-                        });
-                    });
-
-                    return actions;
-                }
-
-                evaluateAction(action) {
+                getPositionalScore(state, playerNum) {
                     let score = 0;
-
-                    if (action.kind === "revive") {
-                        const val = PIECE_VALS[action.type];
-                        score += val * 15;
-                        const distCenter =
-                            Math.abs(action.r - 3) +
-                            Math.abs(action.c - 3);
-                        score -= distCenter;
-                    } else if (action.kind === "move") {
-                        const m = action.moveData;
-                        if (
-                            ["jump", "sacrifice", "jump-stack"].includes(m.type)
-                        ) {
-                            score += m.score * 50;
-                            score += 100;
-                        }
-                        if (m.type === "stack") {
-                            score += 40;
-                        }
-                        if (m.type === "move") {
-                            score += 5;
-                            score += Math.random() * 5;
+                    for (let r = 0; r < SIZE; r++) {
+                        for (let c = 0; c < SIZE; c++) {
+                            const stack = state.board[r][c];
+                            if (!stack.length || stack[0].player !== playerNum)
+                                continue;
+                            const stackVal = getStackValue(stack);
+                            const centerDist = Math.abs(r - 3) + Math.abs(c - 3);
+                            score += stackVal * 10;
+                            score += Math.max(0, 5 - centerDist);
+                            score += stack[stack.length - 1].val * 2;
                         }
                     }
-
                     return score;
                 }
 
+                evaluateState(state, perspective) {
+                    const enemy = perspective === 1 ? 2 : 1;
+                    const scoreDiff =
+                        (state.scores[perspective] - state.scores[enemy]) * 120;
+                    const boardDiff =
+                        this.getPositionalScore(state, perspective) -
+                        this.getPositionalScore(state, enemy);
+                    const supplyDiff =
+                        ((state.supply[perspective].L - state.supply[enemy].L) * 10 +
+                            (state.supply[perspective].M - state.supply[enemy].M) * 7 +
+                            (state.supply[perspective].S - state.supply[enemy].S) * 4) *
+                        2;
+
+                    const myMobility = getActionsForState({
+                        ...cloneGameState(state),
+                        turn: perspective,
+                        isComboMode: false,
+                        selectedCell: null,
+                        validMoves: [],
+                    }).length;
+                    const enemyMobility = getActionsForState({
+                        ...cloneGameState(state),
+                        turn: enemy,
+                        isComboMode: false,
+                        selectedCell: null,
+                        validMoves: [],
+                    }).length;
+
+                    const mobilityDiff = (myMobility - enemyMobility) * 2.5;
+                    return scoreDiff + boardDiff + supplyDiff + mobilityDiff;
+                }
+
+                evaluateAction(state, action) {
+                    const p = state.turn;
+                    const enemy = p === 1 ? 2 : 1;
+                    const nextState = applyActionToState(state, action);
+
+                    if (nextState.scores[p] >= 8) return 999999;
+
+                    let value = this.evaluateState(nextState, p);
+
+                    if (action.kind === "move") {
+                        const t = action.moveData.type;
+                        const gain = action.moveData.score || 0;
+                        if (t === "jump") value += 45 + gain * 30;
+                        if (t === "jump-stack") value += 55 + gain * 26;
+                        if (t === "stack") value += 28;
+                        if (t === "sacrifice") value -= 20;
+                    } else if (action.kind === "revive") {
+                        value += PIECE_VALS[action.type] * 14;
+                    }
+
+                    if (nextState.turn === enemy) {
+                        const oppActions = getActionsForState(nextState);
+                        let oppBest = -Infinity;
+                        const sample = oppActions.slice(0, 20);
+                        sample.forEach((oppAction) => {
+                            const afterOpp = applyActionToState(nextState, oppAction);
+                            const oppScore = this.evaluateState(afterOpp, enemy);
+                            if (oppScore > oppBest) oppBest = oppScore;
+                        });
+                        if (oppBest > -Infinity) value -= oppBest * 0.65;
+                    } else if (nextState.isComboMode) {
+                        value += 35;
+                    }
+
+                    if (nextState.scores[enemy] >= 7 && nextState.turn === enemy) {
+                        value -= 120;
+                    }
+
+                    return value;
+                }
+
                 async chooseAction() {
-                    const actions = this.getAllPossibleActions();
-                    if (actions.length === 0) return null;
+                    const state = snapshotCurrentState();
+                    const actions = getActionsForState(state);
+                    if (!actions.length) return null;
 
                     actions.forEach((action) => {
-                        action.finalScore = this.evaluateAction(action);
+                        action.finalScore = this.evaluateAction(state, action);
                     });
 
                     actions.sort((a, b) => b.finalScore - a.finalScore);
-                    const topK = Math.min(actions.length, 3);
+                    const topK = Math.min(actions.length, 2);
                     return actions[Math.floor(Math.random() * topK)];
                 }
             }
