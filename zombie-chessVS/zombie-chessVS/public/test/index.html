@@ -577,6 +577,7 @@
             }
         </style>
         <script src="/socket.io/socket.io.js"></script>
+        <script src="/shared/ai-agent.js"></script>
     </head>
     <body>
         <div id="git-version">git: --</div>
@@ -628,6 +629,18 @@
                             <option value="bots-vs-bots" disabled>
                                 電腦對戰Bots v.s. Bots（暫不開放）
                             </option>
+                        </select>
+                    </div>
+                    <div class="lobby-row" id="ai-difficulty-row" style="display: none">
+                        <label for="ai-difficulty-select">難度:</label>
+                        <select
+                            id="ai-difficulty-select"
+                            class="lobby-input"
+                            style="max-width: 190px"
+                        >
+                            <option value="easy">Easy</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="hard">Hard</option>
                         </select>
                     </div>
                 </div>
@@ -878,10 +891,17 @@
             const roomInput = document.getElementById("room-id");
             const playerIdDisplay = document.getElementById("player-id-display");
             const nicknameInput = document.getElementById("player-nickname");
+            const modeSelect = document.getElementById("mode-select");
+            const aiDifficultyRow = document.getElementById("ai-difficulty-row");
+            const aiDifficultySelect =
+                document.getElementById("ai-difficulty-select");
             const playerNicknames = { 1: "", 2: "" };
             const PLAYER_ID_KEY = "zombie-chess-player-id";
             const PLAYER_NICKNAME_KEY = "zombie-chess-player-nickname";
+            const AI_DIFFICULTY_KEY = "zombie-chess-ai-difficulty";
             let disconnectCountdownTimer = null;
+            let selectedAIDifficulty =
+                localStorage.getItem(AI_DIFFICULTY_KEY) || "normal";
             const playerId = (() => {
                 const existing = localStorage.getItem(PLAYER_ID_KEY);
                 if (existing) {
@@ -922,6 +942,38 @@
                 roomInput.addEventListener("input", () => {
                     roomInput.dataset.userEdited = "true";
                 });
+            }
+
+            function updateAIDifficultyVisibility() {
+                if (!modeSelect || !aiDifficultyRow) return;
+                aiDifficultyRow.style.display =
+                    modeSelect.value === "sim-bots" ? "flex" : "none";
+            }
+
+            if (aiDifficultySelect) {
+                const validOption = Array.from(aiDifficultySelect.options).some(
+                    (option) => option.value === selectedAIDifficulty,
+                );
+                aiDifficultySelect.value = validOption
+                    ? selectedAIDifficulty
+                    : "normal";
+                selectedAIDifficulty = aiDifficultySelect.value;
+
+                aiDifficultySelect.addEventListener("change", () => {
+                    selectedAIDifficulty = aiDifficultySelect.value;
+                    localStorage.setItem(
+                        AI_DIFFICULTY_KEY,
+                        selectedAIDifficulty,
+                    );
+                });
+            }
+
+            if (modeSelect) {
+                modeSelect.addEventListener(
+                    "change",
+                    updateAIDifficultyVisibility,
+                );
+                updateAIDifficultyVisibility();
             }
 
             fetch("/version")
@@ -975,7 +1027,7 @@
             function joinGame(action = "create") {
                 const room = document.getElementById("room-id").value;
                 if (!room) return alert("請輸入房間號碼");
-                const mode = document.getElementById("mode-select")?.value;
+                const mode = modeSelect?.value;
                 if (mode === "bots-vs-bots") {
                     return alert("電腦對戰模式暫不開放");
                 }
@@ -986,6 +1038,10 @@
                     playerId,
                     nickname,
                     action,
+                    aiDifficulty:
+                        mode === "sim-bots"
+                            ? selectedAIDifficulty
+                            : undefined,
                 });
                 document.getElementById("conn-status").innerText = "連線中...";
             }
@@ -1406,6 +1462,59 @@
             const AI_PLAYER = 2;
             let aiThinking = false;
             let aiPendingTurn = false;
+            const AI_DIFFICULTY_PRESETS = {
+                easy: {
+                    topK: 4,
+                    jumpBaseBonus: 26,
+                    jumpScoreWeight: 18,
+                    jumpStackBaseBonus: 34,
+                    jumpStackScoreWeight: 16,
+                    stackBonus: 16,
+                    sacrificePenalty: 32,
+                    reviveWeight: 10,
+                    opponentSampleLimit: 8,
+                    opponentPressureWeight: 0.25,
+                    emergencyDefensePenalty: 75,
+                    randomJitter: 14,
+                    emptyJumpPenalty: 18,
+                    riskyJumpPenalty: 16,
+                    enemyImmediateScoreWeight: 16,
+                },
+                normal: {
+                    topK: 2,
+                    jumpBaseBonus: 45,
+                    jumpScoreWeight: 30,
+                    jumpStackBaseBonus: 55,
+                    jumpStackScoreWeight: 26,
+                    stackBonus: 28,
+                    sacrificePenalty: 20,
+                    reviveWeight: 14,
+                    opponentSampleLimit: 20,
+                    opponentPressureWeight: 0.65,
+                    emergencyDefensePenalty: 120,
+                    randomJitter: 8,
+                    emptyJumpPenalty: 30,
+                    riskyJumpPenalty: 28,
+                    enemyImmediateScoreWeight: 24,
+                },
+                hard: {
+                    topK: 1,
+                    jumpBaseBonus: 58,
+                    jumpScoreWeight: 38,
+                    jumpStackBaseBonus: 72,
+                    jumpStackScoreWeight: 34,
+                    stackBonus: 36,
+                    sacrificePenalty: 48,
+                    reviveWeight: 18,
+                    opponentSampleLimit: 40,
+                    opponentPressureWeight: 0.95,
+                    emergencyDefensePenalty: 170,
+                    randomJitter: 3,
+                    emptyJumpPenalty: 46,
+                    riskyJumpPenalty: 42,
+                    enemyImmediateScoreWeight: 34,
+                },
+            };
 
             function isAIPlayer(playerNum) {
                 return (
@@ -1779,7 +1888,7 @@
                     return scoreDiff + boardDiff + supplyDiff + mobilityDiff;
                 }
 
-                evaluateAction(state, action) {
+                evaluateAction(state, action, cfg) {
                     const p = state.turn;
                     const enemy = p === 1 ? 2 : 1;
                     const nextState = applyActionToState(state, action);
@@ -1791,46 +1900,66 @@
                     if (action.kind === "move") {
                         const t = action.moveData.type;
                         const gain = action.moveData.score || 0;
-                        if (t === "jump") value += 45 + gain * 30;
-                        if (t === "jump-stack") value += 55 + gain * 26;
-                        if (t === "stack") value += 28;
-                        if (t === "sacrifice") value -= 20;
+                        if (t === "jump") value += cfg.jumpBaseBonus + gain * cfg.jumpScoreWeight;
+                        if (t === "jump-stack") value += cfg.jumpStackBaseBonus + gain * cfg.jumpStackScoreWeight;
+                        if (t === "stack") value += cfg.stackBonus;
+                        if (t === "sacrifice") value -= cfg.sacrificePenalty;
+
+                        if (t === "jump" && gain <= 0 && !nextState.isComboMode && nextState.turn === enemy) {
+                            value -= cfg.emptyJumpPenalty;
+                        }
                     } else if (action.kind === "revive") {
-                        value += PIECE_VALS[action.type] * 14;
+                        value += PIECE_VALS[action.type] * cfg.reviveWeight;
                     }
 
                     if (nextState.turn === enemy) {
                         const oppActions = getActionsForState(nextState);
                         let oppBest = -Infinity;
-                        const sample = oppActions.slice(0, 20);
+                        let oppImmediateGain = 0;
+                        const sample = oppActions.slice(0, cfg.opponentSampleLimit);
                         sample.forEach((oppAction) => {
                             const afterOpp = applyActionToState(nextState, oppAction);
                             const oppScore = this.evaluateState(afterOpp, enemy);
                             if (oppScore > oppBest) oppBest = oppScore;
+                            if (oppAction.kind === "move") {
+                                oppImmediateGain = Math.max(
+                                    oppImmediateGain,
+                                    oppAction.moveData?.score || 0,
+                                );
+                            }
                         });
-                        if (oppBest > -Infinity) value -= oppBest * 0.65;
+                        if (oppBest > -Infinity) value -= oppBest * cfg.opponentPressureWeight;
+                        value -= oppImmediateGain * cfg.enemyImmediateScoreWeight;
                     } else if (nextState.isComboMode) {
                         value += 35;
                     }
 
-                    if (nextState.scores[enemy] >= 7 && nextState.turn === enemy) {
-                        value -= 120;
+                    if (action.kind === "move" && action.moveData.type === "jump" && nextState.turn === enemy) {
+                        value -= cfg.riskyJumpPenalty;
                     }
 
+                    if (nextState.scores[enemy] >= 7 && nextState.turn === enemy) {
+                        value -= cfg.emergencyDefensePenalty;
+                    }
+
+                    value += (Math.random() - 0.5) * cfg.randomJitter;
                     return value;
                 }
 
-                async chooseAction() {
+                async chooseAction(difficulty = "normal") {
                     const state = snapshotCurrentState();
                     const actions = getActionsForState(state);
                     if (!actions.length) return null;
+                    const cfg =
+                        AI_DIFFICULTY_PRESETS[difficulty] ||
+                        AI_DIFFICULTY_PRESETS.normal;
 
                     actions.forEach((action) => {
-                        action.finalScore = this.evaluateAction(state, action);
+                        action.finalScore = this.evaluateAction(state, action, cfg);
                     });
 
                     actions.sort((a, b) => b.finalScore - a.finalScore);
-                    const topK = Math.min(actions.length, 2);
+                    const topK = Math.min(actions.length, cfg.topK);
                     return actions[Math.floor(Math.random() * topK)];
                 }
             }
@@ -1864,7 +1993,7 @@
                     return;
                 }
 
-                const action = await aiAgent.chooseAction();
+                const action = await aiAgent.chooseAction(selectedAIDifficulty);
 
                 if (!action) {
                     endTurn();
